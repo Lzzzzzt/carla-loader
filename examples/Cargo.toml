@@ -1,0 +1,25 @@
+[package]
+name = "complete_pipeline"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "complete_pipeline"
+path = "complete_pipeline.rs"
+
+[[bin]]
+name = "real_carla_pipeline"
+path = "real_carla_pipeline.rs"
+
+[dependencies]
+contracts = { path = "../crates/contracts" }
+ingestion = { path = "../crates/ingestion" }
+sync_engine = { path = "../crates/sync_engine" }
+dispatcher = { path = "../crates/dispatcher" }
+actor_factory = { path = "../crates/actor_factory" }
+config_loader = { path = "../crates/config_loader" }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+observability = { path = "../crates/observability" }
+carla = "0.13.0"

@@ -1,0 +1,45 @@
+# 最小配置示例
+# Minimal configuration example
+
+[world]
+map = "Town01"
+
+# 单辆车配置
+[[vehicles]]
+id = "ego"
+blueprint = "vehicle.tesla.model3"
+
+[vehicles.spawn_point.location]
+x = 0.0
+y = 0.0
+z = 0.0
+
+[vehicles.spawn_point.rotation]
+pitch = 0.0
+yaw = 0.0
+roll = 0.0
+
+# 单个前置摄像头
+[[vehicles.sensors]]
+id = "front_camera"
+sensor_type = "camera"
+frequency_hz = 20.0
+
+[vehicles.sensors.transform.location]
+x = 2.0
+y = 0.0
+z = 1.5
+
+[vehicles.sensors.transform.rotation]
+pitch = 0.0
+yaw = 0.0
+roll = 0.0
+
+# 同步策略
+[sync]
+primary_sensor_id = "front_camera"
+
+# 输出到日志
+[[sinks]]
+name = "console"
+sink_type = "log"

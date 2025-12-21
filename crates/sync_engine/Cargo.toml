@@ -1,0 +1,16 @@
+[package]
+name = "sync_engine"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+contracts = { path = "../contracts" }
+observability = { path = "../observability" }
+anyhow = { workspace = true }
+tokio = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+bytes = { workspace = true }
+tracing = { workspace = true }
+nalgebra = "0.34.1"
+metrics = { workspace = true }

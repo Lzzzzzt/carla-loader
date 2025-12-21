@@ -1,0 +1,14 @@
+[package]
+name = "tests"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+contracts = { path = "../contracts" }
+config_loader = { path = "../config_loader" }
+actor_factory = { path = "../actor_factory" }
+ingestion = { path = "../ingestion" }
+sync_engine = { path = "../sync_engine" }
+dispatcher = { path = "../dispatcher" }
+observability = { path = "../observability" }
+tokio = { workspace = true }

@@ -1,0 +1,144 @@
+# CARLA Syncer 配置文件
+# 单车三传感器配置：RGB Camera, LiDAR, IMU
+
+version = "V1"
+
+# ============================================================================
+# 世界配置
+# ============================================================================
+[world]
+map = "Town03"
+carla_host = "localhost"
+carla_port = 2000
+
+# ============================================================================
+# 车辆配置
+# ============================================================================
+
+[[vehicles]]
+id = "ego"
+blueprint = "vehicle.tesla.model3"
+
+[vehicles.spawn_point.location]
+x = 230.0
+y = 195.0
+z = 0.5
+
+[vehicles.spawn_point.rotation]
+pitch = 0.0
+yaw = 180.0
+roll = 0.0
+
+# --- 传感器配置 ---
+
+# 前置 RGB 摄像头
+[[vehicles.sensors]]
+id = "rgb_camera"
+sensor_type = "camera"
+frequency_hz = 20.0
+
+[vehicles.sensors.transform.location]
+x = 2.0
+y = 0.0
+z = 1.5
+
+[vehicles.sensors.transform.rotation]
+pitch = -10.0
+yaw = 0.0
+roll = 0.0
+
+[vehicles.sensors.attributes]
+image_size_x = "1280"
+image_size_y = "720"
+fov = "90"
+
+# 顶部 LiDAR
+[[vehicles.sensors]]
+id = "lidar"
+sensor_type = "lidar"
+frequency_hz = 10.0
+
+[vehicles.sensors.transform.location]
+x = 0.0
+y = 0.0
+z = 2.5
+
+[vehicles.sensors.transform.rotation]
+pitch = 0.0
+yaw = 0.0
+roll = 0.0
+
+[vehicles.sensors.attributes]
+channels = "32"
+range = "100"
+points_per_second = "600000"
+rotation_frequency = "10"
+upper_fov = "10"
+lower_fov = "-30"
+
+# IMU (惯性测量单元)
+[[vehicles.sensors]]
+id = "imu"
+sensor_type = "imu"
+frequency_hz = 100.0
+
+[vehicles.sensors.transform.location]
+x = 0.0
+y = 0.0
+z = 0.0
+
+[vehicles.sensors.transform.rotation]
+pitch = 0.0
+yaw = 0.0
+roll = 0.0
+
+# ============================================================================
+# 同步配置
+# ============================================================================
+[sync]
+primary_sensor_id = "rgb_camera"
+min_window_sec = 0.02
+max_window_sec = 0.08
+
+[sync.engine]
+required_sensor_ids = ["rgb_camera", "lidar", "imu"]
+imu_sensor_id = "imu"
+
+[sync.engine.window]
+min_ms = 20.0
+max_ms = 80.0
+
+[sync.engine.buffer]
+max_size = 1000
+timeout_s = 1.0
+
+[sync.engine.adakf]
+initial_offset = 0.0
+process_noise = 0.0001
+measurement_noise = 0.0008
+residual_window = 20
+
+[sync.engine.sensor_intervals]
+rgb_camera = 0.05
+lidar = 0.1
+imu = 0.01
+
+# ============================================================================
+# 输出配置
+# ============================================================================
+
+# 控制台日志输出
+[[sinks]]
+name = "console_log"
+sink_type = "log"
+queue_capacity = 50
+
+# 文件输出
+[[sinks]]
+name = "file_output"
+sink_type = "file"
+queue_capacity = 100
+
+[sinks.params]
+output_dir = "/tmp/carla_syncer_output"
+format = "mcap"

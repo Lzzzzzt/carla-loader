@@ -1,0 +1,47 @@
+[package]
+name = "carla-syncer-cli"
+version.workspace = true
+edition.workspace = true
+description = "Command-line interface for CARLA sensor synchronization pipeline"
+readme = "README.md"
+license = "MIT"
+
+[[bin]]
+name = "carla-syncer"
+path = "src/main.rs"
+
+[dependencies]
+# Workspace crates
+contracts = { path = "../contracts" }
+config_loader = { path = "../config_loader" }
+actor_factory = { path = "../actor_factory", features = ["real-carla"] }
+ingestion = { path = "../ingestion" }
+sync_engine = { path = "../sync_engine" }
+dispatcher = { path = "../dispatcher" }
+observability = { path = "../observability" }
+
+# CLI & Config
+clap = { version = "4.5", features = ["derive", "env", "wrap_help"] }
+dotenvy = "0.15"
+
+# Async runtime
+tokio.workspace = true
+
+# Error handling
+anyhow.workspace = true
+thiserror.workspace = true
+
+# Logging & Tracing
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+tempfile = "3.19"
+
+[features]
+default = []
+mock = []    # Use mock CARLA client for testing

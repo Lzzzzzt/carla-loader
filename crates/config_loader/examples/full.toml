@@ -1,0 +1,232 @@
+# 完整配置示例
+# Full configuration example with multiple vehicles, sensors, and sinks
+
+version = "V1"
+
+[world]
+map = "Town03"
+carla_host = "localhost"
+carla_port = 2000
+
+# 自定义天气
+[world.weather.custom]
+cloudiness = 20.0
+precipitation = 0.0
+sun_altitude_angle = 45.0
+
+# ============================================================================
+# 车辆配置
+# ============================================================================
+
+# 主车 (Ego Vehicle)
+[[vehicles]]
+id = "ego"
+blueprint = "vehicle.tesla.model3"
+
+[vehicles.spawn_point.location]
+x = 230.0
+y = 195.0
+z = 0.5
+
+[vehicles.spawn_point.rotation]
+pitch = 0.0
+yaw = 180.0
+roll = 0.0
+
+# --- Ego 传感器 ---
+
+# 前置 RGB 摄像头
+[[vehicles.sensors]]
+id = "ego_front_camera"
+sensor_type = "camera"
+frequency_hz = 20.0
+
+[vehicles.sensors.transform.location]
+x = 2.5
+y = 0.0
+z = 1.5
+
+[vehicles.sensors.transform.rotation]
+pitch = -10.0
+yaw = 0.0
+roll = 0.0
+
+[vehicles.sensors.attributes]
+image_size_x = "1920"
+image_size_y = "1080"
+fov = "90"
+
+# 顶部 LiDAR
+[[vehicles.sensors]]
+id = "ego_lidar"
+sensor_type = "lidar"
+frequency_hz = 10.0
+
+[vehicles.sensors.transform.location]
+x = 0.0
+y = 0.0
+z = 2.5
+
+[vehicles.sensors.transform.rotation]
+pitch = 0.0
+yaw = 0.0
+roll = 0.0
+
+[vehicles.sensors.attributes]
+channels = "64"
+range = "100"
+points_per_second = "1200000"
+rotation_frequency = "10"
+upper_fov = "15"
+lower_fov = "-25"
+
+# 前置雷达
+[[vehicles.sensors]]
+id = "ego_radar"
+sensor_type = "radar"
+frequency_hz = 20.0
+
+[vehicles.sensors.transform.location]
+x = 2.5
+y = 0.0
+z = 0.8
+
+[vehicles.sensors.transform.rotation]
+pitch = 0.0
+yaw = 0.0
+roll = 0.0
+
+[vehicles.sensors.attributes]
+horizontal_fov = "30"
+vertical_fov = "10"
+range = "100"
+
+# IMU
+[[vehicles.sensors]]
+id = "ego_imu"
+sensor_type = "imu"
+frequency_hz = 100.0
+
+[vehicles.sensors.transform.location]
+x = 0.0
+y = 0.0
+z = 0.0
+
+[vehicles.sensors.transform.rotation]
+pitch = 0.0
+yaw = 0.0
+roll = 0.0
+
+# GNSS
+[[vehicles.sensors]]
+id = "ego_gnss"
+sensor_type = "gnss"
+frequency_hz = 10.0
+
+[vehicles.sensors.transform.location]
+x = 0.0
+y = 0.0
+z = 2.0
+
+[vehicles.sensors.transform.rotation]
+pitch = 0.0
+yaw = 0.0
+roll = 0.0
+
+# ----------------------------------------------------------------------------
+
+# NPC 车辆 1
+[[vehicles]]
+id = "npc_1"
+blueprint = "vehicle.audi.a2"
+
+[vehicles.spawn_point.location]
+x = 200.0
+y = 195.0
+z = 0.5
+
+[vehicles.spawn_point.rotation]
+pitch = 0.0
+yaw = 180.0
+roll = 0.0
+
+# NPC 传感器 (可选)
+[[vehicles.sensors]]
+id = "npc_1_camera"
+sensor_type = "camera"
+frequency_hz = 10.0
+
+[vehicles.sensors.transform.location]
+x = 2.0
+y = 0.0
+z = 1.5
+
+[vehicles.sensors.transform.rotation]
+pitch = 0.0
+yaw = 0.0
+roll = 0.0
+
+# ============================================================================
+# 同步策略
+# ============================================================================
+
+[sync]
+primary_sensor_id = "ego_front_camera"
+min_window_sec = 0.020
+max_window_sec = 0.100
+missing_frame_policy = "drop"
+drop_policy = "drop_oldest"
+
+[sync.engine]
+required_sensor_ids = ["ego_front_camera", "ego_lidar", "ego_imu"]
+imu_sensor_id = "ego_imu"
+
+[sync.engine.window]
+min_ms = 15.0
+max_ms = 90.0
+
+[sync.engine.buffer]
+max_size = 1500
+timeout_s = 1.2
+
+[sync.engine.adakf]
+initial_offset = 0.0
+process_noise = 0.0001
+measurement_noise = 0.0008
+residual_window = 25
+
+[sync.engine.sensor_intervals]
+ego_front_camera = 0.05
+ego_lidar = 0.1
+ego_imu = 0.01
+
+# ============================================================================
+# 输出路由
+# ============================================================================
+
+# 控制台日志
+[[sinks]]
+name = "console"
+sink_type = "log"
+queue_capacity = 50
+
+# 文件输出
+[[sinks]]
+name = "file_writer"
+sink_type = "file"
+queue_capacity = 200
+
+[sinks.params]
+output_dir = "/tmp/carla_output"
+format = "mcap"
+
+# 网络输出 (UDP)
+[[sinks]]
+name = "network"
+sink_type = "network"
+queue_capacity = 100
+
+[sinks.params]
+host = "127.0.0.1"
+port = "9000"
+protocol = "udp"

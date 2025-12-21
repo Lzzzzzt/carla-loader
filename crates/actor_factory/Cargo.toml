@@ -1,0 +1,18 @@
+[package]
+name = "actor_factory"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+contracts = { path = "../contracts" }
+tokio = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+# CARLA 客户端（可选，仅在需要真实 CARLA 连接时启用）
+carla = { version = "0.13.0", optional = true }
+
+[features]
+default = ["real-carla"]
+# 启用真实 CARLA 客户端
+real-carla = ["carla"]

@@ -1,0 +1,12 @@
+[package]
+name = "observability"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+contracts = { path = "../contracts" }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+metrics = { workspace = true }
+metrics-exporter-prometheus = "0.18.1"
+anyhow = { workspace = true }
