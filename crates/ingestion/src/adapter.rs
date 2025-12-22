@@ -2,8 +2,8 @@
 
 use std::sync::Arc;
 
+use async_channel::Sender;
 use contracts::{SensorPacket, SensorType};
-use tokio::sync::mpsc;
 
 use crate::config::IngestionMetrics;
 
@@ -26,7 +26,7 @@ pub trait SensorAdapter: Send + Sync {
     /// # Arguments
     /// * `tx` - 数据包发送通道
     /// * `metrics` - 共享的 ingestion 指标
-    fn start(&self, tx: mpsc::Sender<SensorPacket>, metrics: Arc<IngestionMetrics>);
+    fn start(&self, tx: Sender<SensorPacket>, metrics: Arc<IngestionMetrics>);
 
     /// 停止传感器数据采集
     fn stop(&self);

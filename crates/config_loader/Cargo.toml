@@ -9,3 +9,4 @@ serde = { workspace = true }
 thiserror = { workspace = true }
 toml = "0.9.8"
 serde_json = { workspace = true }
+validator = { version = "0.20", features = ["derive"] }

@@ -14,3 +14,5 @@ bytes = { workspace = true }
 tracing = { workspace = true }
 nalgebra = "0.34.1"
 metrics = { workspace = true }
+ringbuf = "0.4"
+slab = "0.4"

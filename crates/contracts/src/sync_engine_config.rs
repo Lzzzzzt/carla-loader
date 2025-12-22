@@ -3,19 +3,19 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use crate::MissingFramePolicy;
+use crate::{MissingFramePolicy, SensorId};
 
 /// Sync engine configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncEngineConfig {
     /// Reference sensor ID (main clock source)
-    pub reference_sensor_id: String,
+    pub reference_sensor_id: SensorId,
 
     /// Required sensor IDs (must all have data to output)
-    pub required_sensors: Vec<String>,
+    pub required_sensors: Vec<SensorId>,
 
     /// IMU sensor ID (for adaptive window calculation)
-    pub imu_sensor_id: Option<String>,
+    pub imu_sensor_id: Option<SensorId>,
 
     /// Window configuration
     #[serde(default)]
@@ -35,7 +35,7 @@ pub struct SyncEngineConfig {
 
     /// Expected interval per sensor (seconds)
     #[serde(default)]
-    pub sensor_intervals: HashMap<String, f64>,
+    pub sensor_intervals: HashMap<SensorId, f64>,
 }
 
 /// IMU adaptive window configuration

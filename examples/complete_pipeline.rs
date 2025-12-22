@@ -55,12 +55,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         receivers.push(source.start(100, None));
     }
 
-    // Fan-in all sensor streams into a single channel
+    // Fan-in all sensor streams into a single channel (async-channel is natively async)
     let (packet_tx, packet_rx) = mpsc::channel::<SensorPacket>(512);
-    for mut rx in receivers {
+    for rx in receivers {
         let tx = packet_tx.clone();
         tokio::spawn(async move {
-            while let Some(packet) = rx.recv().await {
+            while let Ok(packet) = rx.recv().await {
                 if tx.send(packet).await.is_err() {
                     break;
                 }

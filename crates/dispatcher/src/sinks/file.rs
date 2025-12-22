@@ -115,16 +115,53 @@ impl FileSink {
     }
 
     fn save_image(&self, path: PathBuf, image: &ImageData) -> std::io::Result<()> {
-        let color_type = match image.format {
-            ImageFormat::Rgb8 => image::ColorType::Rgb8,
-            ImageFormat::Rgba8
-            | ImageFormat::Bgra8
-            | ImageFormat::Depth
-            | ImageFormat::SemanticSeg => image::ColorType::Rgba8,
-        };
+        match image.format {
+            ImageFormat::Rgb8 => image::save_buffer(
+                path,
+                &image.data,
+                image.width,
+                image.height,
+                image::ColorType::Rgb8,
+            )
+            .map_err(std::io::Error::other),
 
-        image::save_buffer(path, &image.data, image.width, image.height, color_type)
-            .map_err(std::io::Error::other)
+            ImageFormat::Rgba8 => image::save_buffer(
+                path,
+                &image.data,
+                image.width,
+                image.height,
+                image::ColorType::Rgba8,
+            )
+            .map_err(std::io::Error::other),
+
+            ImageFormat::Bgra8 => {
+                // Convert BGRA to RGBA
+                let mut rgba_data = image.data.to_vec();
+                for chunk in rgba_data.chunks_exact_mut(4) {
+                    chunk.swap(0, 2); // Swap B and R
+                }
+                image::save_buffer(
+                    path,
+                    &rgba_data,
+                    image.width,
+                    image.height,
+                    image::ColorType::Rgba8,
+                )
+                .map_err(std::io::Error::other)
+            }
+
+            ImageFormat::Depth | ImageFormat::SemanticSeg => {
+                // Save as is (usually BGRA in CARLA)
+                image::save_buffer(
+                    path,
+                    &image.data,
+                    image.width,
+                    image.height,
+                    image::ColorType::Rgba8,
+                )
+                .map_err(std::io::Error::other)
+            }
+        }
     }
 
     fn save_point_cloud(&self, path: PathBuf, pc: &PointCloudData) -> std::io::Result<()> {

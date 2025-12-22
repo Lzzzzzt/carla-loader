@@ -5,15 +5,15 @@
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 
-use crate::SensorType;
+use crate::{SensorId, SensorType};
 
 /// 传感器数据包
 ///
 /// 从 CARLA 传感器回调接收的原始数据。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SensorPacket {
-    /// 传感器 ID
-    pub sensor_id: String,
+    /// 传感器 ID (cheap clone via Arc<str>)
+    pub sensor_id: SensorId,
 
     /// 传感器类型
     pub sensor_type: SensorType,

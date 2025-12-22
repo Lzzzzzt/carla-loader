@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use contracts::{SensorPacket, SensorType};
-use tokio::sync::mpsc;
+use async_channel::{bounded, Receiver, Sender};
 use tracing::{debug, info, instrument};
 
 #[cfg(feature = "real-carla")]
@@ -25,10 +25,10 @@ pub struct IngestionPipeline {
     metrics: Arc<IngestionMetrics>,
 
     /// 数据发送端（所有 adapter 共享）
-    tx: mpsc::Sender<SensorPacket>,
+    tx: Sender<SensorPacket>,
 
     /// 数据接收端
-    rx: Option<mpsc::Receiver<SensorPacket>>,
+    rx: Option<Receiver<SensorPacket>>,
 
     /// 默认背压配置
     default_config: BackpressureConfig,
@@ -40,7 +40,7 @@ impl IngestionPipeline {
     /// # Arguments
     /// * `channel_capacity` - 通道容量
     pub fn new(channel_capacity: usize) -> Self {
-        let (tx, rx) = mpsc::channel(channel_capacity);
+        let (tx, rx) = bounded(channel_capacity);
 
         Self {
             adapters: HashMap::new(),
@@ -56,7 +56,7 @@ impl IngestionPipeline {
 
     /// 使用自定义背压配置创建
     pub fn with_config(config: BackpressureConfig) -> Self {
-        let (tx, rx) = mpsc::channel(config.channel_capacity);
+        let (tx, rx) = bounded(config.channel_capacity);
 
         Self {
             adapters: HashMap::new(),
@@ -144,7 +144,7 @@ impl IngestionPipeline {
     /// 获取数据流接收端
     ///
     /// 注意：只能调用一次，后续调用返回 None
-    pub fn take_receiver(&mut self) -> Option<mpsc::Receiver<SensorPacket>> {
+    pub fn take_receiver(&mut self) -> Option<Receiver<SensorPacket>> {
         self.rx.take()
     }
 

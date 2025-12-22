@@ -2,7 +2,7 @@
 //!
 //! Implements a lightweight 2-state (offset + drift) Kalman filter with
 //! EWMA-based measurement noise tuning and load-aware process noise scaling.
-#![allow(unused)]
+
 use std::collections::VecDeque;
 
 use crate::AdaKFConfig;
@@ -126,11 +126,13 @@ impl AdaKF {
     }
 
     /// Current drift estimate (seconds per second)
+    #[allow(dead_code)]
     pub fn drift(&self) -> f64 {
         self.state[1]
     }
 
     /// Current uncertainty of offset component
+    #[allow(dead_code)]
     pub fn uncertainty(&self) -> f64 {
         self.covariance[0][0]
     }
@@ -151,6 +153,7 @@ impl AdaKF {
     }
 
     /// Get the latest residuals for diagnostics
+    #[allow(dead_code)]
     pub fn recent_residuals(&self) -> impl Iterator<Item = &f64> {
         self.residual_window.iter()
     }

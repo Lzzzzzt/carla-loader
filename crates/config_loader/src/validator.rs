@@ -1,32 +1,40 @@
 //! 配置校验模块
 //!
+//! 使用 `validator` crate 进行结构化验证，同时保留自定义校验规则。
+//!
 //! 校验规则：
 //! - sensor_id 唯一
 //! - vehicle_id 唯一
 //! - 传感器挂载拓扑合法 (primary_sensor_id 存在)
-//! - frequency_hz > 0
-//! - min_window_sec <= max_window_sec
-//! - sink 必填字段齐全
+//! - frequency_hz > 0 (由 validator derive 处理)
+//! - min_window_sec <= max_window_sec (由 validator schema 处理)
+//! - sink 必填字段齐全 (由 validator derive 处理)
 
 use std::collections::HashSet;
 
 use contracts::{ContractError, WorldBlueprint};
+use validator::Validate;
 
 /// 校验 WorldBlueprint 配置
 ///
-/// 返回第一个遇到的错误，或 Ok(())。
+/// 先运行结构化 validator 校验，再执行自定义校验。
 pub fn validate(blueprint: &WorldBlueprint) -> Result<(), ContractError> {
-    validate_vehicle_ids(blueprint)?;
-    validate_sensor_ids(blueprint)?;
-    validate_sensor_frequencies(blueprint)?;
-    validate_sync_config(blueprint)?;
-    validate_sinks(blueprint)?;
+    // 1. 运行 validator derive 定义的规则
+    blueprint
+        .validate()
+        .map_err(|e| ContractError::config_validation("validation", format!("{}", e)))?;
+
+    // 2. 执行自定义校验（ID 唯一性、引用完整性）
+    validate_unique_vehicle_ids(blueprint)?;
+    validate_unique_sensor_ids(blueprint)?;
+    validate_primary_sensor_exists(blueprint)?;
+
     Ok(())
 }
 
-/// 校验 vehicle_id 唯一性  
-fn validate_vehicle_ids(blueprint: &WorldBlueprint) -> Result<(), ContractError> {
-    let mut seen = HashSet::new();
+/// 校验 vehicle_id 唯一性
+fn validate_unique_vehicle_ids(blueprint: &WorldBlueprint) -> Result<(), ContractError> {
+    let mut seen = HashSet::with_capacity(blueprint.vehicles.len());
     for vehicle in &blueprint.vehicles {
         if !seen.insert(&vehicle.id) {
             return Err(ContractError::config_validation(
@@ -39,8 +47,10 @@ fn validate_vehicle_ids(blueprint: &WorldBlueprint) -> Result<(), ContractError>
 }
 
 /// 校验 sensor_id 唯一性 (全局)
-fn validate_sensor_ids(blueprint: &WorldBlueprint) -> Result<(), ContractError> {
-    let mut seen = HashSet::new();
+fn validate_unique_sensor_ids(blueprint: &WorldBlueprint) -> Result<(), ContractError> {
+    let total_sensors: usize = blueprint.vehicles.iter().map(|v| v.sensors.len()).sum();
+    let mut seen = HashSet::with_capacity(total_sensors);
+
     for vehicle in &blueprint.vehicles {
         for sensor in &vehicle.sensors {
             if !seen.insert(&sensor.id) {
@@ -54,69 +64,24 @@ fn validate_sensor_ids(blueprint: &WorldBlueprint) -> Result<(), ContractError> 
     Ok(())
 }
 
-/// 校验传感器采样率
-fn validate_sensor_frequencies(blueprint: &WorldBlueprint) -> Result<(), ContractError> {
-    for vehicle in &blueprint.vehicles {
-        for sensor in &vehicle.sensors {
-            if sensor.frequency_hz <= 0.0 {
-                return Err(ContractError::config_validation(
-                    format!(
-                        "vehicles[{}].sensors[{}].frequency_hz",
-                        vehicle.id, sensor.id
-                    ),
-                    format!("frequency_hz must be > 0, got {}", sensor.frequency_hz),
-                ));
-            }
-        }
-    }
-    Ok(())
-}
-
-/// 校验同步配置
-fn validate_sync_config(blueprint: &WorldBlueprint) -> Result<(), ContractError> {
-    let sync = &blueprint.sync;
-
-    // 校验窗口范围
-    if sync.min_window_sec > sync.max_window_sec {
-        return Err(ContractError::config_validation(
-            "sync.min_window_sec / sync.max_window_sec",
-            format!(
-                "min_window_sec ({}) must be <= max_window_sec ({})",
-                sync.min_window_sec, sync.max_window_sec
-            ),
-        ));
-    }
-
-    // 校验 primary_sensor_id 存在
+/// 校验 primary_sensor_id 存在
+fn validate_primary_sensor_exists(blueprint: &WorldBlueprint) -> Result<(), ContractError> {
     let all_sensor_ids: HashSet<_> = blueprint
         .vehicles
         .iter()
         .flat_map(|v| v.sensors.iter().map(|s| s.id.as_str()))
         .collect();
 
-    if !all_sensor_ids.contains(sync.primary_sensor_id.as_str()) {
+    if !all_sensor_ids.contains(blueprint.sync.primary_sensor_id.as_str()) {
         return Err(ContractError::config_validation(
             "sync.primary_sensor_id",
             format!(
                 "primary_sensor_id '{}' not found in any vehicle sensors",
-                sync.primary_sensor_id
+                blueprint.sync.primary_sensor_id
             ),
         ));
     }
 
-    Ok(())
-}
-
-/// 校验 sink 配置
-fn validate_sinks(blueprint: &WorldBlueprint) -> Result<(), ContractError> {
-    for (idx, sink) in blueprint.sinks.iter().enumerate() {
-        if sink.name.is_empty() {
-            return Err(ContractError::config_validation(
-                format!("sinks[{}].name", idx),
-                "sink name cannot be empty",
-            ));
-        }
-    }
     Ok(())
 }
 
@@ -201,8 +166,10 @@ mod tests {
         bp.vehicles.push(bp.vehicles[0].clone());
         let result = validate(&bp);
         assert!(result.is_err());
-        let err = result.unwrap_err().to_string();
-        assert!(err.contains("duplicate vehicle_id"), "got: {err}");
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("duplicate vehicle_id"));
     }
 
     #[test]
@@ -212,8 +179,10 @@ mod tests {
         bp.vehicles[0].sensors.push(dup_sensor);
         let result = validate(&bp);
         assert!(result.is_err());
-        let err = result.unwrap_err().to_string();
-        assert!(err.contains("duplicate sensor_id"), "got: {err}");
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("duplicate sensor_id"));
     }
 
     #[test]
@@ -222,8 +191,6 @@ mod tests {
         bp.vehicles[0].sensors[0].frequency_hz = -5.0;
         let result = validate(&bp);
         assert!(result.is_err());
-        let err = result.unwrap_err().to_string();
-        assert!(err.contains("frequency_hz must be > 0"), "got: {err}");
     }
 
     #[test]
@@ -233,8 +200,6 @@ mod tests {
         bp.sync.max_window_sec = 0.1;
         let result = validate(&bp);
         assert!(result.is_err());
-        let err = result.unwrap_err().to_string();
-        assert!(err.contains("min_window_sec"), "got: {err}");
     }
 
     #[test]
@@ -243,8 +208,7 @@ mod tests {
         bp.sync.primary_sensor_id = "nonexistent".into();
         let result = validate(&bp);
         assert!(result.is_err());
-        let err = result.unwrap_err().to_string();
-        assert!(err.contains("not found"), "got: {err}");
+        assert!(result.unwrap_err().to_string().contains("not found"));
     }
 
     #[test]
@@ -253,7 +217,5 @@ mod tests {
         bp.sinks[0].name = String::new();
         let result = validate(&bp);
         assert!(result.is_err());
-        let err = result.unwrap_err().to_string();
-        assert!(err.contains("cannot be empty"), "got: {err}");
     }
 }

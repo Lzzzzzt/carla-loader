@@ -1,9 +1,8 @@
 //! Main sync engine implementation.
-#![allow(unused)]
 
 use std::collections::HashMap;
 
-use contracts::{ImuData, SensorPacket, SensorPayload, SensorType, SyncMeta, SyncedFrame};
+use contracts::{ImuData, SensorId, SensorPacket, SensorPayload, SensorType, SyncMeta, SyncedFrame};
 use tracing::instrument;
 
 use crate::adakf::AdaKF;
@@ -25,13 +24,62 @@ enum SyncState {
     Ready,
 }
 
-#[derive(Default)]
+/// Selected sensor data for a single frame (aggregated for cache locality)
+struct SelectedSensor {
+    sensor_id: SensorId,
+    packet: SensorPacket,
+    time_offset: f64,
+    kf_residual: f64,
+    quality_score: f64,
+}
+
+/// Frame selection result using Vec for small N sensors
 struct FrameSelection {
-    frames: HashMap<String, SensorPacket>,
-    time_offsets: HashMap<String, f64>,
-    kf_residuals: HashMap<String, f64>,
-    quality_scores: HashMap<String, f64>,
-    missing_sensors: Vec<String>,
+    /// Successfully selected sensors (Vec for cache locality)
+    selected: Vec<SelectedSensor>,
+    /// Sensors that couldn't be synced
+    missing_sensors: Vec<SensorId>,
+}
+
+impl FrameSelection {
+    fn with_capacity(cap: usize) -> Self {
+        Self {
+            selected: Vec::with_capacity(cap),
+            missing_sensors: Vec::new(),
+        }
+    }
+
+    /// Convert to HashMaps for SyncedFrame output
+    fn into_hashmaps(
+        self,
+    ) -> (
+        HashMap<SensorId, SensorPacket>,
+        HashMap<SensorId, f64>,
+        HashMap<SensorId, f64>,
+        HashMap<SensorId, f64>,
+        Vec<SensorId>,
+    ) {
+        let cap = self.selected.len();
+        let mut frames = HashMap::with_capacity(cap);
+        let mut time_offsets = HashMap::with_capacity(cap);
+        let mut kf_residuals = HashMap::with_capacity(cap);
+        let mut quality_scores = HashMap::with_capacity(cap);
+
+        for s in self.selected {
+            frames.insert(s.sensor_id.clone(), s.packet);
+            time_offsets.insert(s.sensor_id.clone(), s.time_offset);
+            kf_residuals.insert(s.sensor_id.clone(), s.kf_residual);
+            quality_scores.insert(s.sensor_id, s.quality_score);
+        }
+
+        (
+            frames,
+            time_offsets,
+            kf_residuals,
+            quality_scores,
+            self.missing_sensors,
+        )
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -42,15 +90,53 @@ struct SyncContext {
     min_window_s: f64,
 }
 
+/// Per-sensor state aggregated in one place for cache locality
+#[derive(Debug)]
+struct SensorState {
+    /// Sensor identifier
+    id: SensorId,
+    /// Packet buffer
+    buffer: SensorBuffer,
+    /// Kalman filter estimator
+    estimator: AdaKF,
+    /// Last estimator update time
+    last_update_time: f64,
+    /// Last emitted timestamp (for jitter tracking)
+    last_emit_time: f64,
+    /// Expected interval between packets
+    expected_interval: f64,
+}
+
+impl SensorState {
+    fn new(
+        id: SensorId,
+        buffer_size: usize,
+        timeout_s: f64,
+        adakf_config: &crate::AdaKFConfig,
+        expected_interval: f64,
+    ) -> Self {
+        let mut kf_config = adakf_config.clone();
+        kf_config.expected_interval = Some(expected_interval);
+        Self {
+            id,
+            buffer: SensorBuffer::new(buffer_size, timeout_s),
+            estimator: AdaKF::new(&kf_config),
+            last_update_time: 0.0,
+            last_emit_time: 0.0,
+            expected_interval,
+        }
+    }
+}
+
 /// Multi-sensor synchronization engine
 #[derive(Debug)]
 pub struct SyncEngine {
     /// Configuration
     config: SyncEngineConfig,
-    /// Per-sensor buffers
-    buffers: HashMap<String, SensorBuffer>,
-    /// Per-sensor AdaKF estimators
-    estimators: HashMap<String, AdaKF>,
+    /// Per-sensor states (aggregated for cache locality)
+    sensors: Vec<SensorState>,
+    /// Index of reference sensor in sensors vec
+    reference_idx: usize,
     /// Current state
     state: SyncState,
     /// Frame counter
@@ -59,67 +145,97 @@ pub struct SyncEngine {
     latest_imu: Option<ImuData>,
     /// Current motion intensity
     motion_intensity: f64,
-    /// Total dropped count
-    total_dropped: u64,
-    /// Total out-of-order count
-    total_out_of_order: u64,
     /// Last synced timestamp for jitter calculation
     last_sync_time: Option<f64>,
-    /// Last reference time processed per sensor (for KF Δt)
-    last_estimator_update: HashMap<String, f64>,
-    /// Last emitted timestamp per sensor (for jitter watchdog)
-    sensor_last_emit: HashMap<String, f64>,
+    /// Adaptive quality threshold multiplier (1.0 = use base threshold)
+    quality_multiplier: f64,
+    /// Running accept rate for adaptive threshold
+    accept_rate: f64,
 }
 
 impl SyncEngine {
     /// Create a new sync engine with the given configuration
     pub fn new(config: SyncEngineConfig) -> Self {
-        let mut buffers = HashMap::new();
-        let mut estimators = HashMap::new();
+        let mut sensors = Vec::with_capacity(config.required_sensors.len() + 1);
+        let mut reference_idx = 0;
 
-        // Initialize buffers and estimators for all required sensors
-        for sensor_id in &config.required_sensors {
-            buffers.insert(
+        // Build sensor list from required sensors
+        for (i, sensor_id) in config.required_sensors.iter().enumerate() {
+            let expected_interval = config
+                .sensor_intervals
+                .get(sensor_id)
+                .copied()
+                .unwrap_or(DEFAULT_SENSOR_INTERVAL);
+
+            sensors.push(SensorState::new(
                 sensor_id.clone(),
-                SensorBuffer::new(config.buffer.max_size, config.buffer.timeout_s),
-            );
+                config.buffer.max_size,
+                config.buffer.timeout_s,
+                &config.adakf,
+                expected_interval,
+            ));
 
-            let mut kf_config = config.adakf.clone();
-            if let Some(&interval) = config.sensor_intervals.get(sensor_id) {
-                kf_config.expected_interval = Some(interval);
+            if sensor_id == &config.reference_sensor_id {
+                reference_idx = i;
             }
-            estimators.insert(sensor_id.clone(), AdaKF::new(&kf_config));
         }
 
-        // Also add reference sensor if not in required list
+        // Add reference sensor if not in required list
         if !config
             .required_sensors
             .contains(&config.reference_sensor_id)
         {
-            buffers.insert(
+            reference_idx = sensors.len();
+            sensors.push(SensorState::new(
                 config.reference_sensor_id.clone(),
-                SensorBuffer::new(config.buffer.max_size, config.buffer.timeout_s),
-            );
-            estimators.insert(
-                config.reference_sensor_id.clone(),
-                AdaKF::new(&config.adakf),
-            );
+                config.buffer.max_size,
+                config.buffer.timeout_s,
+                &config.adakf,
+                DEFAULT_SENSOR_INTERVAL,
+            ));
         }
 
         Self {
             config,
-            buffers,
-            estimators,
+            sensors,
+            reference_idx,
             state: SyncState::Idle,
             frame_counter: 0,
             latest_imu: None,
             motion_intensity: 0.0,
-            total_dropped: 0,
-            total_out_of_order: 0,
             last_sync_time: None,
-            last_estimator_update: HashMap::new(),
-            sensor_last_emit: HashMap::new(),
+            quality_multiplier: 1.0,
+            accept_rate: 1.0,
         }
+    }
+
+    /// Find sensor state by id (linear search, fast for small N)
+    #[inline]
+    fn find_sensor(&self, sensor_id: &str) -> Option<usize> {
+        self.sensors.iter().position(|s| s.id == sensor_id)
+    }
+
+    /// Find or create sensor state
+    #[inline]
+    fn find_or_create_sensor(&mut self, sensor_id: &str) -> usize {
+        if let Some(idx) = self.find_sensor(sensor_id) {
+            return idx;
+        }
+        // Create new sensor state
+        let expected_interval = self
+            .config
+            .sensor_intervals
+            .get(sensor_id)
+            .copied()
+            .unwrap_or(DEFAULT_SENSOR_INTERVAL);
+        self.sensors.push(SensorState::new(
+            sensor_id.into(),
+            self.config.buffer.max_size,
+            self.config.buffer.timeout_s,
+            &self.config.adakf,
+            expected_interval,
+        ));
+        self.sensors.len() - 1
     }
 
     /// Push a packet into the sync engine
@@ -135,7 +251,9 @@ impl SyncEngine {
         let sensor_id = packet.sensor_id.clone();
 
         self.update_motion_from_packet(&sensor_id, &packet);
-        self.buffer_mut(&sensor_id).push(packet);
+
+        let idx = self.find_or_create_sensor(&sensor_id);
+        self.sensors[idx].buffer.push(packet);
 
         self.update_state();
 
@@ -155,44 +273,33 @@ impl SyncEngine {
 
     /// Check if all buffers are empty
     fn all_buffers_empty(&self) -> bool {
-        self.buffers.values().all(|b| b.is_empty())
+        self.sensors.iter().all(|s| s.buffer.is_empty())
     }
 
     /// Check if all required sensors have at least one packet
     fn all_required_sensors_have_data(&self) -> bool {
-        self.config
-            .required_sensors
-            .iter()
-            .all(|id| self.buffers.get(id).map(|b| !b.is_empty()).unwrap_or(false))
+        self.config.required_sensors.iter().all(|id| {
+            self.find_sensor(id)
+                .map(|idx| !self.sensors[idx].buffer.is_empty())
+                .unwrap_or(false)
+        })
     }
 
     fn average_buffer_pressure(&self) -> f64 {
-        if self.buffers.is_empty() {
+        if self.sensors.is_empty() {
             return 0.0;
         }
 
-        let mut total = 0.0;
-        let mut count = 0.0;
-        for (sensor_id, buffer) in &self.buffers {
-            total += self.buffer_pressure_for(sensor_id, buffer);
-            count += 1.0;
-        }
+        let total: f64 = self
+            .sensors
+            .iter()
+            .map(|s| self.buffer_pressure(&s.buffer))
+            .sum();
 
-        if count == 0.0 {
-            0.0
-        } else {
-            (total / count).clamp(0.0, 1.0)
-        }
+        (total / self.sensors.len() as f64).clamp(0.0, 1.0)
     }
 
-    fn sensor_load_index(&self, sensor_id: &str) -> f64 {
-        self.buffers
-            .get(sensor_id)
-            .map(|buffer| self.buffer_pressure_for(sensor_id, buffer))
-            .unwrap_or(0.0)
-    }
-
-    fn buffer_pressure_for(&self, sensor_id: &str, buffer: &SensorBuffer) -> f64 {
+    fn buffer_pressure(&self, buffer: &SensorBuffer) -> f64 {
         let capacity = self.config.buffer.max_size.max(1) as f64;
         let depth = buffer.len() as f64 / capacity;
         let drop = buffer.dropped_count() as f64 / capacity;
@@ -202,10 +309,8 @@ impl SyncEngine {
     }
 
     fn sensor_expected_interval(&self, sensor_id: &str) -> f64 {
-        self.config
-            .sensor_intervals
-            .get(sensor_id)
-            .copied()
+        self.find_sensor(sensor_id)
+            .map(|idx| self.sensors[idx].expected_interval)
             .unwrap_or(DEFAULT_SENSOR_INTERVAL)
             .max(1e-3)
     }
@@ -228,17 +333,14 @@ impl SyncEngine {
         capped.max(MIN_WINDOW_FLOOR_S)
     }
 
-    fn estimator_dt(&mut self, sensor_id: &str, t_ref: f64) -> f64 {
-        let entry = self
-            .last_estimator_update
-            .entry(sensor_id.to_string())
-            .or_insert(t_ref);
-        let dt = (t_ref - *entry).abs();
-        *entry = t_ref;
+    fn estimator_dt(&mut self, idx: usize, t_ref: f64) -> f64 {
+        let sensor = &mut self.sensors[idx];
+        let dt = (t_ref - sensor.last_update_time).abs();
+        sensor.last_update_time = t_ref;
         if dt > 0.0 {
             dt
         } else {
-            self.sensor_expected_interval(sensor_id)
+            sensor.expected_interval
         }
     }
 
@@ -265,37 +367,67 @@ impl SyncEngine {
         (time_term * residual_term * load_term * sensor_bias).clamp(0.0, 1.0)
     }
 
+    /// Get quality threshold for a sensor type
+    /// Uses base threshold with adaptive multiplier (targets 95% accept rate)
     fn quality_threshold(&self, sensor_type: SensorType) -> f64 {
-        match sensor_type {
+        let base = match sensor_type {
             SensorType::Camera => 0.05,
             SensorType::Lidar => 0.04,
             SensorType::Imu => 0.02,
             _ => 0.03,
-        }
+        };
+        // Apply adaptive multiplier (lower multiplier = lower threshold = more accepting)
+        (base * self.quality_multiplier).clamp(0.001, 1.0)
     }
 
-    fn check_sensor_jitter(&mut self, frames: &HashMap<String, SensorPacket>) {
+    /// Update adaptive quality threshold based on accept/reject outcome
+    /// Targets fixed 95% accept rate with EMA smoothing
+    fn update_adaptive_threshold(&mut self, accepted: usize, total: usize) {
+        if total == 0 {
+            return;
+        }
+
+        const TARGET_ACCEPT_RATE: f64 = 0.95;
+        const SMOOTHING: f64 = 0.98;
+
+        let current_rate = accepted as f64 / total as f64;
+
+        // Exponential moving average of accept rate
+        self.accept_rate = SMOOTHING * self.accept_rate + (1.0 - SMOOTHING) * current_rate;
+
+        // Adjust multiplier based on accept rate vs 95% target
+        let adjustment = if self.accept_rate < TARGET_ACCEPT_RATE - 0.05 {
+            0.995 // Lower threshold gradually
+        } else if self.accept_rate > TARGET_ACCEPT_RATE + 0.02 {
+            1.002 // Raise threshold gradually
+        } else {
+            1.0 // In acceptable range
+        };
+
+        self.quality_multiplier = (self.quality_multiplier * adjustment).clamp(0.1, 2.0);
+    }
+
+    fn check_sensor_jitter(&mut self, frames: &HashMap<SensorId, SensorPacket>) {
         for (sensor_id, packet) in frames {
-            let entry = self
-                .sensor_last_emit
-                .entry(sensor_id.clone())
-                .or_insert(packet.timestamp);
-            let interval = (packet.timestamp - *entry).abs();
-            let budget = Self::sensor_jitter_budget(packet.sensor_type);
-            if interval > budget {
-                tracing::warn!(
-                    sensor_id = %sensor_id,
-                    jitter = interval,
-                    budget,
-                    "sensor jitter budget exceeded"
-                );
-                metrics::counter!(
-                    "sync_sensor_jitter_exceeded",
-                    "sensor_id" => sensor_id.clone()
-                )
-                .increment(1);
+            if let Some(idx) = self.find_sensor(sensor_id) {
+                let sensor = &mut self.sensors[idx];
+                let interval = (packet.timestamp - sensor.last_emit_time).abs();
+                let budget = Self::sensor_jitter_budget(packet.sensor_type);
+                if interval > budget && sensor.last_emit_time > 0.0 {
+                    tracing::warn!(
+                        sensor_id = %sensor_id,
+                        jitter = interval,
+                        budget,
+                        "sensor jitter budget exceeded"
+                    );
+                    metrics::counter!(
+                        "sync_sensor_jitter_exceeded",
+                        "sensor_id" => sensor_id.to_string()
+                    )
+                    .increment(1);
+                }
+                sensor.last_emit_time = packet.timestamp;
             }
-            *entry = packet.timestamp;
         }
     }
 
@@ -306,7 +438,6 @@ impl SyncEngine {
             SensorType::Imu => 0.12,
             SensorType::Gnss => 0.5,
             SensorType::Radar => 0.3,
-            _ => 0.3,
         }
     }
 
@@ -364,32 +495,29 @@ impl SyncEngine {
         let (dropped_count, out_of_order_count) = self.aggregate_buffer_counts();
         self.frame_counter += 1;
 
+        // Convert to HashMaps for metrics and output
+        let (frames, time_offsets, kf_residuals, quality_scores, missing_sensors) =
+            selection.into_hashmaps();
+
         self.record_frame_metrics(
             context.reference_time,
-            &selection.frames,
-            &selection.time_offsets,
-            &selection.quality_scores,
+            &frames,
+            &time_offsets,
+            &quality_scores,
         );
-
-        let FrameSelection {
-            frames,
-            time_offsets,
-            kf_residuals,
-            quality_scores: _,
-            missing_sensors,
-        } = selection;
 
         self.check_sensor_jitter(&frames);
 
-        let sync_meta = self.build_sync_meta(
-            context.window,
-            context.fused_intensity,
+        let sync_meta = SyncMeta {
+            reference_sensor_id: self.config.reference_sensor_id.clone(),
+            window_size: context.window,
+            motion_intensity: Some(context.fused_intensity),
             time_offsets,
             kf_residuals,
             missing_sensors,
             dropped_count,
             out_of_order_count,
-        );
+        };
 
         self.evict_consumed(context.reference_time);
 
@@ -404,8 +532,8 @@ impl SyncEngine {
     /// Evict frames that have been consumed
     #[instrument(name = "sync_engine_evict_consumed", skip(self))]
     fn evict_consumed(&mut self, up_to: f64) {
-        for buffer in self.buffers.values_mut() {
-            buffer.remove_consumed(up_to);
+        for sensor in &mut self.sensors {
+            sensor.buffer.remove_consumed(up_to);
         }
         self.update_state();
     }
@@ -418,12 +546,12 @@ impl SyncEngine {
         let mut oldest: Option<f64> = None;
         let mut newest: Option<f64> = None;
 
-        for buffer in self.buffers.values() {
-            let len = buffer.len();
+        for sensor in &self.sensors {
+            let len = sensor.buffer.len();
             total += len;
 
             // Get sensor type from first packet if available
-            if let Some(packet) = buffer.peek() {
+            if let Some(packet) = sensor.buffer.peek() {
                 depths.insert(packet.sensor_type, len);
 
                 let ts = packet.timestamp;
@@ -468,18 +596,10 @@ impl SyncEngine {
         }
     }
 
-    fn buffer_mut(&mut self, sensor_id: &str) -> &mut SensorBuffer {
-        self.buffers
-            .entry(sensor_id.to_string())
-            .or_insert_with(|| {
-                SensorBuffer::new(self.config.buffer.max_size, self.config.buffer.timeout_s)
-            })
-    }
-
     fn reference_timestamp(&self) -> Option<f64> {
-        self.buffers
-            .get(&self.config.reference_sensor_id)
-            .and_then(|buffer| buffer.peek().map(|packet| packet.timestamp))
+        self.sensors
+            .get(self.reference_idx)
+            .and_then(|s| s.buffer.peek().map(|packet| packet.timestamp))
     }
 
     #[instrument(
@@ -489,66 +609,76 @@ impl SyncEngine {
         fields(t_ref = t_ref, window = window)
     )]
     fn collect_frames(&mut self, t_ref: f64, window: f64, min_window_s: f64) -> FrameSelection {
-        let mut selection = FrameSelection::default();
+        let num_required = self.config.required_sensors.len();
+        let mut selection = FrameSelection::with_capacity(num_required);
 
-        let required_sensors = self.config.required_sensors.clone();
-        for sensor_id in required_sensors {
-            let offset = self
-                .estimators
-                .get(&sensor_id)
-                .map(|e| e.offset())
-                .unwrap_or(0.0);
+        // Collect sensor indices for required sensors
+        let sensor_indices: Vec<(SensorId, Option<usize>)> = self
+            .config
+            .required_sensors
+            .iter()
+            .map(|id| (id.clone(), self.find_sensor(id)))
+            .collect();
 
-            let t_target = t_ref + offset;
-
-            let packet_opt = {
-                let buffer = match self.buffers.get(&sensor_id) {
-                    Some(b) => b,
-                    None => {
-                        selection.missing_sensors.push(sensor_id.clone());
-                        continue;
-                    }
-                };
-                buffer.find_closest_in_window(t_target, window).cloned()
+        for (sensor_id, idx_opt) in sensor_indices {
+            let idx = match idx_opt {
+                Some(i) => i,
+                None => {
+                    selection.missing_sensors.push(sensor_id);
+                    continue;
+                }
             };
 
+            let offset = self.sensors[idx].estimator.offset();
+            let t_target = t_ref + offset;
+
+            let packet_opt = self.sensors[idx]
+                .buffer
+                .find_closest_in_window(t_target, window)
+                .cloned();
+
             let packet = match packet_opt {
-                Some(packet) => packet,
+                Some(p) => p,
                 None => {
-                    selection.missing_sensors.push(sensor_id.clone());
+                    selection.missing_sensors.push(sensor_id);
                     continue;
                 }
             };
 
             let time_delta = packet.timestamp - t_target;
-            let load_index = self.sensor_load_index(&sensor_id);
-            let dt = self.estimator_dt(&sensor_id, t_ref);
-            let (estimate, residual) = if let Some(estimator) = self.estimators.get_mut(&sensor_id)
-            {
-                estimator.update(time_delta, dt, load_index)
-            } else {
-                (offset, time_delta)
-            };
+            let load_index = self.buffer_pressure(&self.sensors[idx].buffer);
+            let dt = self.estimator_dt(idx, t_ref);
+            let (time_offset, kf_residual) = self.sensors[idx]
+                .estimator
+                .update(time_delta, dt, load_index);
 
-            selection.time_offsets.insert(sensor_id.clone(), estimate);
-
-            let quality = self.compute_quality_score(
+            let quality_score = self.compute_quality_score(
                 &packet,
                 time_delta,
-                residual,
+                kf_residual,
                 window,
                 min_window_s,
                 load_index,
             );
-            if quality < self.quality_threshold(packet.sensor_type) {
-                selection.missing_sensors.push(sensor_id.clone());
+            if quality_score < self.quality_threshold(packet.sensor_type) {
+                selection.missing_sensors.push(sensor_id);
                 continue;
             }
 
-            selection.kf_residuals.insert(sensor_id.clone(), residual);
-            selection.quality_scores.insert(sensor_id.clone(), quality);
-            selection.frames.insert(sensor_id.clone(), packet);
+            // Aggregate all sensor data in one struct
+            selection.selected.push(SelectedSensor {
+                sensor_id,
+                packet,
+                time_offset,
+                kf_residual,
+                quality_score,
+            });
         }
+
+        // Update adaptive threshold based on this frame's outcomes
+        let total = num_required;
+        let accepted = selection.selected.len();
+        self.update_adaptive_threshold(accepted, total);
 
         selection
     }
@@ -559,7 +689,7 @@ impl SyncEngine {
         skip(self, missing_sensors),
         fields(strategy = ?self.config.missing_strategy, missing = missing_sensors.len())
     )]
-    fn should_drop_for_missing(&self, missing_sensors: &[String]) -> bool {
+    fn should_drop_for_missing(&self, missing_sensors: &[SensorId]) -> bool {
         match self.config.missing_strategy {
             MissingDataStrategy::Drop => {
                 if missing_sensors.is_empty() {
@@ -587,7 +717,7 @@ impl SyncEngine {
         skip_all,
         fields(missing = ?_missing_sensors)
     )]
-    fn record_missing_drop(&self, _missing_sensors: &[String]) {}
+    fn record_missing_drop(&self, _missing_sensors: &[SensorId]) {}
 
     #[instrument(
         name = "sync_engine_interpolation_placeholder",
@@ -595,44 +725,22 @@ impl SyncEngine {
         skip_all,
         fields(missing = ?_missing_sensors)
     )]
-    fn emit_interpolation_warning(&self, _missing_sensors: &[String]) {}
+    fn emit_interpolation_warning(&self, _missing_sensors: &[SensorId]) {}
 
     fn aggregate_buffer_counts(&self) -> (u32, u32) {
-        self.buffers.values().fold((0u32, 0u32), |mut acc, buffer| {
-            acc.0 += buffer.dropped_count() as u32;
-            acc.1 += buffer.out_of_order_count() as u32;
+        self.sensors.iter().fold((0u32, 0u32), |mut acc, sensor| {
+            acc.0 += sensor.buffer.dropped_count() as u32;
+            acc.1 += sensor.buffer.out_of_order_count() as u32;
             acc
         })
-    }
-
-    fn build_sync_meta(
-        &self,
-        window: f64,
-        motion_intensity: f64,
-        time_offsets: HashMap<String, f64>,
-        kf_residuals: HashMap<String, f64>,
-        missing_sensors: Vec<String>,
-        dropped_count: u32,
-        out_of_order_count: u32,
-    ) -> SyncMeta {
-        SyncMeta {
-            reference_sensor_id: self.config.reference_sensor_id.clone(),
-            window_size: window,
-            motion_intensity: Some(motion_intensity),
-            time_offsets,
-            kf_residuals,
-            missing_sensors,
-            dropped_count,
-            out_of_order_count,
-        }
     }
 
     fn record_frame_metrics(
         &mut self,
         t_ref: f64,
-        frames: &HashMap<String, SensorPacket>,
-        time_offsets: &HashMap<String, f64>,
-        quality_scores: &HashMap<String, f64>,
+        frames: &HashMap<SensorId, SensorPacket>,
+        time_offsets: &HashMap<SensorId, f64>,
+        quality_scores: &HashMap<SensorId, f64>,
     ) {
         metrics::counter!("sync_frames_total", "status" => "ok").increment(1);
 
@@ -674,7 +782,7 @@ mod tests {
 
     fn make_camera_packet(sensor_id: &str, timestamp: f64) -> SensorPacket {
         SensorPacket {
-            sensor_id: sensor_id.to_string(),
+            sensor_id: sensor_id.into(),
             sensor_type: SensorType::Camera,
             timestamp,
             frame_id: None,
@@ -689,7 +797,7 @@ mod tests {
 
     fn make_lidar_packet(sensor_id: &str, timestamp: f64) -> SensorPacket {
         SensorPacket {
-            sensor_id: sensor_id.to_string(),
+            sensor_id: sensor_id.into(),
             sensor_type: SensorType::Lidar,
             timestamp,
             frame_id: None,
@@ -703,7 +811,7 @@ mod tests {
 
     fn make_imu_packet(sensor_id: &str, timestamp: f64) -> SensorPacket {
         SensorPacket {
-            sensor_id: sensor_id.to_string(),
+            sensor_id: sensor_id.into(),
             sensor_type: SensorType::Imu,
             timestamp,
             frame_id: None,
@@ -721,9 +829,9 @@ mod tests {
 
     fn default_config() -> SyncEngineConfig {
         SyncEngineConfig {
-            reference_sensor_id: "cam".to_string(),
-            required_sensors: vec!["cam".to_string(), "lidar".to_string()],
-            imu_sensor_id: Some("imu".to_string()),
+            reference_sensor_id: "cam".into(),
+            required_sensors: vec!["cam".into(), "lidar".into()],
+            imu_sensor_id: Some("imu".into()),
             window: Default::default(),
             buffer: Default::default(),
             adakf: Default::default(),

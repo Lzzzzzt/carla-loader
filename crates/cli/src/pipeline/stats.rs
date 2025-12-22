@@ -40,6 +40,7 @@ impl PipelineStats {
     }
 
     /// Calculate drop rate as percentage
+    #[allow(dead_code)]
     pub fn drop_rate(&self) -> f64 {
         let total = self.frames_synced + self.frames_dropped;
         if total > 0 {

@@ -140,7 +140,7 @@ impl Pipeline {
         // ==== Stage 7: Start Pipeline ====
         info!("Starting sensor data ingestion...");
         ingestion.start_all();
-        let mut ingestion_rx = ingestion
+        let ingestion_rx = ingestion
             .take_receiver()
             .context("Failed to get ingestion receiver")?;
 
@@ -152,13 +152,15 @@ impl Pipeline {
             "Pipeline running"
         );
 
-        // Pipeline processing task
+        // Pipeline processing task (async-channel is natively async)
         let pipeline_task = async move {
-            let mut stats = PipelineStats::default();
-            stats.active_sensors = active_sensors;
-            stats.active_sinks = active_sinks;
+            let mut stats = PipelineStats {
+                active_sensors,
+                active_sinks,
+                ..Default::default()
+            };
 
-            while let Some(packet) = ingestion_rx.recv().await {
+            while let Ok(packet) = ingestion_rx.recv().await {
                 stats.packets_received += 1;
 
                 if let Some(frame) = sync_engine.push(packet) {

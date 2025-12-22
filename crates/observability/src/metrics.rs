@@ -54,7 +54,7 @@ pub fn record_sync_metrics(meta: &SyncMeta, frame_id: u64) {
     if missing_count > 0 {
         counter!("carla_syncer_frames_with_missing_sensors_total").increment(1);
         for sensor_id in &meta.missing_sensors {
-            counter!("carla_syncer_sensor_missing_total", "sensor_id" => sensor_id.clone())
+            counter!("carla_syncer_sensor_missing_total", "sensor_id" => sensor_id.to_string())
                 .increment(1);
         }
     }
@@ -63,13 +63,13 @@ pub fn record_sync_metrics(meta: &SyncMeta, frame_id: u64) {
     for (sensor_id, offset) in &meta.time_offsets {
         gauge!(
             "carla_syncer_time_offset_ms",
-            "sensor_id" => sensor_id.clone()
+            "sensor_id" => sensor_id.to_string()
         )
         .set(offset * 1000.0);
 
         histogram!(
             "carla_syncer_time_offset_ms_hist",
-            "sensor_id" => sensor_id.clone()
+            "sensor_id" => sensor_id.to_string()
         )
         .record(offset.abs() * 1000.0);
     }
@@ -78,13 +78,13 @@ pub fn record_sync_metrics(meta: &SyncMeta, frame_id: u64) {
     for (sensor_id, residual) in &meta.kf_residuals {
         gauge!(
             "carla_syncer_kf_residual",
-            "sensor_id" => sensor_id.clone()
+            "sensor_id" => sensor_id.to_string()
         )
         .set(*residual);
 
         histogram!(
             "carla_syncer_kf_residual_hist",
-            "sensor_id" => sensor_id.clone()
+            "sensor_id" => sensor_id.to_string()
         )
         .record(residual.abs());
     }
@@ -170,7 +170,7 @@ impl SyncMetricsAggregator {
         if !meta.missing_sensors.is_empty() {
             self.frames_with_missing += 1;
             for sensor_id in &meta.missing_sensors {
-                *self.missing_counts.entry(sensor_id.clone()).or_insert(0) += 1;
+                *self.missing_counts.entry(sensor_id.to_string()).or_insert(0) += 1;
             }
         }
 
@@ -185,7 +185,7 @@ impl SyncMetricsAggregator {
         // 时间偏移
         for (sensor_id, offset) in &meta.time_offsets {
             self.offset_stats
-                .entry(sensor_id.clone())
+                .entry(sensor_id.to_string())
                 .or_default()
                 .push(offset.abs() * 1000.0);
         }
@@ -396,12 +396,12 @@ mod tests {
         let mut aggregator = SyncMetricsAggregator::new();
 
         let meta = SyncMeta {
-            reference_sensor_id: "cam".to_string(),
+            reference_sensor_id: "cam".into(),
             window_size: 0.05,
             motion_intensity: Some(0.3),
-            time_offsets: HashMap::from([("lidar".to_string(), 0.002)]),
+            time_offsets: HashMap::from([("lidar".into(), 0.002)]),
             kf_residuals: HashMap::new(),
-            missing_sensors: vec!["radar".to_string()],
+            missing_sensors: vec!["radar".into()],
             dropped_count: 2,
             out_of_order_count: 1,
         };

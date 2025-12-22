@@ -3,6 +3,7 @@
 use thiserror::Error;
 
 /// CLI-specific error types
+#[allow(dead_code)]
 #[derive(Error, Debug)]
 pub enum CliError {
     /// Configuration file not found
@@ -42,6 +43,7 @@ pub enum CliError {
     Other(#[from] anyhow::Error),
 }
 
+#[allow(dead_code)]
 impl CliError {
     pub fn config_not_found(path: impl Into<String>) -> Self {
         Self::ConfigNotFound { path: path.into() }
@@ -85,4 +87,5 @@ impl CliError {
 }
 
 /// Result type alias for CLI operations
+#[allow(dead_code)]
 pub type Result<T> = std::result::Result<T, CliError>;

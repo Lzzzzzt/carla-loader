@@ -4,6 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use validator::Validate;
 
 use crate::{AdaKFConfig, BufferConfig, MissingDataStrategy, SyncEngineConfig, WindowConfig};
 
@@ -15,29 +16,34 @@ pub enum ConfigVersion {
 }
 
 /// 完整的世界配置蓝图
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Validate)]
 pub struct WorldBlueprint {
     /// 配置版本
     #[serde(default)]
     pub version: ConfigVersion,
 
     /// 世界设置
+    #[validate(nested)]
     pub world: WorldConfig,
 
     /// 车辆定义列表
+    #[validate(nested)]
     pub vehicles: Vec<VehicleConfig>,
 
     /// 同步策略配置
+    #[validate(nested)]
     pub sync: SyncConfig,
 
     /// 输出路由配置
+    #[validate(nested)]
     pub sinks: Vec<SinkConfig>,
 }
 
 /// 世界配置：地图、天气等
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Validate)]
 pub struct WorldConfig {
     /// 地图名称 (e.g., "Town01")
+    #[validate(length(min = 1, message = "map name cannot be empty"))]
     pub map: String,
 
     /// 天气预设 (可选)
@@ -50,6 +56,7 @@ pub struct WorldConfig {
 
     /// CARLA 服务器端口
     #[serde(default = "default_carla_port")]
+    #[validate(range(min = 1, max = 65535))]
     pub carla_port: u16,
 }
 
@@ -82,12 +89,14 @@ pub struct WeatherParams {
 }
 
 /// 车辆配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Validate)]
 pub struct VehicleConfig {
     /// 唯一标识符
+    #[validate(length(min = 1, message = "vehicle id cannot be empty"))]
     pub id: String,
 
     /// 蓝图名称 (e.g., "vehicle.tesla.model3")
+    #[validate(length(min = 1, message = "blueprint name cannot be empty"))]
     pub blueprint: String,
 
     /// 初始位姿
@@ -95,6 +104,7 @@ pub struct VehicleConfig {
 
     /// 挂载的传感器列表
     #[serde(default)]
+    #[validate(nested)]
     pub sensors: Vec<SensorConfig>,
 }
 
@@ -123,9 +133,10 @@ pub struct Rotation {
 }
 
 /// 传感器配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Validate)]
 pub struct SensorConfig {
     /// 唯一标识符
+    #[validate(length(min = 1, message = "sensor id cannot be empty"))]
     pub id: String,
 
     /// 传感器类型
@@ -135,6 +146,7 @@ pub struct SensorConfig {
     pub transform: Transform,
 
     /// 采样频率 (Hz)，必须 > 0
+    #[validate(range(exclusive_min = 0.0, message = "frequency_hz must be > 0"))]
     pub frequency_hz: f64,
 
     /// 传感器特定属性
@@ -154,17 +166,21 @@ pub enum SensorType {
 }
 
 /// 同步策略配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Validate)]
+#[validate(schema(function = "validate_sync_window"))]
 pub struct SyncConfig {
     /// 主时钟传感器 ID (用于确定参考时间)
+    #[validate(length(min = 1, message = "primary_sensor_id cannot be empty"))]
     pub primary_sensor_id: String,
 
     /// 同步窗口下限 (秒)
     #[serde(default = "default_min_window")]
+    #[validate(range(min = 0.0))]
     pub min_window_sec: f64,
 
     /// 同步窗口上限 (秒)
     #[serde(default = "default_max_window")]
+    #[validate(range(min = 0.0))]
     pub max_window_sec: f64,
 
     /// 缺帧策略
@@ -178,6 +194,18 @@ pub struct SyncConfig {
     /// Additional sync engine tuning parameters
     #[serde(default)]
     pub engine: SyncEngineOverrides,
+}
+
+/// Validate sync window (min <= max)
+fn validate_sync_window(config: &SyncConfig) -> Result<(), validator::ValidationError> {
+    if config.min_window_sec > config.max_window_sec {
+        let mut err = validator::ValidationError::new("window_range");
+        err.message = Some(std::borrow::Cow::Borrowed(
+            "min_window_sec must be <= max_window_sec",
+        ));
+        return Err(err);
+    }
+    Ok(())
 }
 
 /// Optional overrides for the runtime sync engine
@@ -241,9 +269,10 @@ pub enum DropPolicy {
 }
 
 /// Sink 输出配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Validate)]
 pub struct SinkConfig {
     /// Sink 名称
+    #[validate(length(min = 1, message = "sink name cannot be empty"))]
     pub name: String,
 
     /// Sink 类型
@@ -277,18 +306,31 @@ pub enum SinkType {
 impl WorldBlueprint {
     /// Build a SyncEngineConfig using blueprint data and optional overrides
     pub fn to_sync_engine_config(&self) -> SyncEngineConfig {
+        use crate::SensorId;
+
         let overrides = &self.sync.engine;
 
-        let required_sensors = if overrides.required_sensor_ids.is_empty() {
+        let required_sensors: Vec<SensorId> = if overrides.required_sensor_ids.is_empty() {
             self.default_required_sensors()
+                .into_iter()
+                .map(SensorId::from)
+                .collect()
         } else {
-            overrides.required_sensor_ids.clone()
+            overrides
+                .required_sensor_ids
+                .iter()
+                .map(|s| SensorId::from(s.as_str()))
+                .collect()
         };
 
-        let imu_sensor_id = overrides.imu_sensor_id.clone().or_else(|| {
-            self.first_sensor_of_type(SensorType::Imu)
-                .map(|s| s.id.clone())
-        });
+        let imu_sensor_id: Option<SensorId> = overrides
+            .imu_sensor_id
+            .as_ref()
+            .map(|s| SensorId::from(s.as_str()))
+            .or_else(|| {
+                self.first_sensor_of_type(SensorType::Imu)
+                    .map(|s| SensorId::from(s.id.as_str()))
+            });
 
         let mut window = overrides.window.clone().unwrap_or(WindowConfig {
             min_ms: self.sync.min_window_sec * 1000.0,
@@ -301,17 +343,22 @@ impl WorldBlueprint {
         let buffer = overrides.buffer.clone().unwrap_or_default();
         let adakf = overrides.adakf.clone().unwrap_or_default();
 
-        let mut sensor_intervals = overrides.sensor_intervals.clone();
+        let mut sensor_intervals: std::collections::HashMap<SensorId, f64> = overrides
+            .sensor_intervals
+            .iter()
+            .map(|(k, v)| (SensorId::from(k.as_str()), *v))
+            .collect();
         for sensor in self.all_sensors() {
             if sensor.frequency_hz > 0.0 {
+                let key = SensorId::from(sensor.id.as_str());
                 sensor_intervals
-                    .entry(sensor.id.clone())
+                    .entry(key)
                     .or_insert_with(|| 1.0 / sensor.frequency_hz);
             }
         }
 
         SyncEngineConfig {
-            reference_sensor_id: self.sync.primary_sensor_id.clone(),
+            reference_sensor_id: SensorId::from(self.sync.primary_sensor_id.as_str()),
             required_sensors,
             imu_sensor_id,
             window,

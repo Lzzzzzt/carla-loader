@@ -5,7 +5,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use crate::{SensorPacket, SensorType};
+use crate::{SensorId, SensorPacket, SensorType};
 
 /// 同步后的帧
 ///
@@ -19,7 +19,7 @@ pub struct SyncedFrame {
     pub frame_id: u64,
 
     /// 各传感器的数据包 (sensor_id -> packet)
-    pub frames: HashMap<String, SensorPacket>,
+    pub frames: HashMap<SensorId, SensorPacket>,
 
     /// 同步元信息
     pub sync_meta: SyncMeta,
@@ -29,7 +29,7 @@ pub struct SyncedFrame {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SyncMeta {
     /// 参考时钟传感器 ID
-    pub reference_sensor_id: String,
+    pub reference_sensor_id: SensorId,
 
     /// 动态窗口大小 (秒)
     pub window_size: f64,
@@ -38,13 +38,13 @@ pub struct SyncMeta {
     pub motion_intensity: Option<f64>,
 
     /// 各传感器的时间偏移估计 (sensor_id -> offset)
-    pub time_offsets: HashMap<String, f64>,
+    pub time_offsets: HashMap<SensorId, f64>,
 
     /// 卡尔曼滤波残差 (用于自适应调参)
-    pub kf_residuals: HashMap<String, f64>,
+    pub kf_residuals: HashMap<SensorId, f64>,
 
     /// 缺失的传感器 (本帧无数据)
-    pub missing_sensors: Vec<String>,
+    pub missing_sensors: Vec<SensorId>,
 
     /// 被丢弃的包数量 (过期/乱序)
     pub dropped_count: u32,

@@ -88,17 +88,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ==== Stage 6: Start Pipeline ====
     info!("Starting pipeline...");
     ingestion.start_all();
-    let mut ingestion_rx = ingestion.take_receiver().unwrap();
+    let ingestion_rx = ingestion.take_receiver().unwrap();
 
     let target_frames = 10000u64;
     let sync_tx_clone = sync_tx;
 
     info!("Running pipeline, target: {} synced frames", target_frames);
 
+    // async-channel is natively async, no bridge needed
     let pipeline_handle = tokio::spawn(async move {
         let mut synced_count = 0u64;
 
-        while let Some(packet) = ingestion_rx.recv().await {
+        while let Ok(packet) = ingestion_rx.recv().await {
             if let Some(frame) = sync_engine.push(packet) {
                 synced_count += 1;
                 info!(

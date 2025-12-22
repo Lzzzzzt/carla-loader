@@ -22,7 +22,7 @@ mod e2e_tests {
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::Arc;
 
-    use contracts::{SensorPacket, SinkConfig, SinkType, SyncedFrame};
+    use contracts::{SinkConfig, SinkType, SyncedFrame};
     use dispatcher::create_dispatcher;
     use ingestion::MockSensorSource;
     use sync_engine::{MissingDataStrategy, SyncEngine, SyncEngineConfig};
@@ -42,8 +42,8 @@ mod e2e_tests {
 
         // Create sync engine
         let sync_config = SyncEngineConfig {
-            reference_sensor_id: "cam".to_string(),
-            required_sensors: vec!["cam".to_string(), "lidar".to_string()],
+            reference_sensor_id: "cam".into(),
+            required_sensors: vec!["cam".into(), "lidar".into()],
             imu_sensor_id: None,
             window: Default::default(),
             buffer: Default::default(),
@@ -65,60 +65,64 @@ mod e2e_tests {
         let dispatcher = create_dispatcher(sink_configs, sync_rx).await.unwrap();
         let dispatcher_handle = dispatcher.spawn();
 
-        // Start mock sources
-        let mut camera_rx = camera_source.start(100, None);
-        let mut lidar_rx = lidar_source.start(100, None);
+        // Start mock sources (async-channel receivers)
+        let camera_rx = camera_source.start(100, None);
+        let lidar_rx = lidar_source.start(100, None);
 
         // Counter for verification
         let frame_count = Arc::new(AtomicU64::new(0));
         let target_frames = 5u64;
+
+        // Fan-in async channels to tokio mpsc
+        let (bridge_tx, mut bridge_rx) = mpsc::channel(200);
+        let bridge_tx_cam = bridge_tx.clone();
+        let bridge_tx_lidar = bridge_tx.clone();
+        drop(bridge_tx);
+
+        // async-channel is natively async
+        tokio::spawn(async move {
+            while let Ok(packet) = camera_rx.recv().await {
+                if bridge_tx_cam.send(packet).await.is_err() {
+                    break;
+                }
+            }
+        });
+        tokio::spawn(async move {
+            while let Ok(packet) = lidar_rx.recv().await {
+                if bridge_tx_lidar.send(packet).await.is_err() {
+                    break;
+                }
+            }
+        });
 
         // Run pipeline
         let sync_tx_clone = sync_tx.clone();
         let frame_count_clone = frame_count.clone();
 
         let pipeline_handle = tokio::spawn(async move {
-            let mut cam_packet: Option<SensorPacket> = None;
-            let mut lidar_packet: Option<SensorPacket> = None;
+            let mut cam_received = false;
+            let mut lidar_received = false;
 
-            loop {
-                tokio::select! {
-                    Some(packet) = camera_rx.recv() => {
-                        cam_packet = Some(packet.clone());
-                        // Try to sync
-                        if let Some(frame) = sync_engine.push(packet) {
-                            frame_count_clone.fetch_add(1, Ordering::SeqCst);
-                            if sync_tx_clone.send(frame).await.is_err() {
-                                break;
-                            }
-                            if frame_count_clone.load(Ordering::SeqCst) >= target_frames {
-                                break;
-                            }
-                        }
+            while let Some(packet) = bridge_rx.recv().await {
+                if packet.sensor_id == "cam" {
+                    cam_received = true;
+                } else if packet.sensor_id == "lidar" {
+                    lidar_received = true;
+                }
+
+                if let Some(frame) = sync_engine.push(packet) {
+                    frame_count_clone.fetch_add(1, Ordering::SeqCst);
+                    if sync_tx_clone.send(frame).await.is_err() {
+                        break;
                     }
-                    Some(packet) = lidar_rx.recv() => {
-                        lidar_packet = Some(packet.clone());
-                        // Try to sync
-                        if let Some(frame) = sync_engine.push(packet) {
-                            frame_count_clone.fetch_add(1, Ordering::SeqCst);
-                            if sync_tx_clone.send(frame).await.is_err() {
-                                break;
-                            }
-                            if frame_count_clone.load(Ordering::SeqCst) >= target_frames {
-                                break;
-                            }
-                        }
+                    if frame_count_clone.load(Ordering::SeqCst) >= target_frames {
+                        break;
                     }
-                    else => break,
                 }
             }
 
             // Return stats
-            (
-                cam_packet.is_some(),
-                lidar_packet.is_some(),
-                sync_engine.frame_count(),
-            )
+            (cam_received, lidar_received, sync_engine.frame_count())
         });
 
         // Wait for pipeline with timeout
@@ -155,9 +159,9 @@ mod e2e_tests {
         let imu_source = MockSensorSource::imu("imu", 100.0);
 
         let sync_config = SyncEngineConfig {
-            reference_sensor_id: "cam".to_string(),
-            required_sensors: vec!["cam".to_string(), "lidar".to_string()],
-            imu_sensor_id: Some("imu".to_string()),
+            reference_sensor_id: "cam".into(),
+            required_sensors: vec!["cam".into(), "lidar".into()],
+            imu_sensor_id: Some("imu".into()),
             window: Default::default(),
             buffer: Default::default(),
             adakf: Default::default(),
@@ -166,33 +170,49 @@ mod e2e_tests {
         };
         let mut sync_engine = SyncEngine::new(sync_config);
 
-        let mut camera_rx = camera_source.start(100, None);
-        let mut lidar_rx = lidar_source.start(100, None);
-        let mut imu_rx = imu_source.start(100, None);
+        let camera_rx = camera_source.start(100, None);
+        let lidar_rx = lidar_source.start(100, None);
+        let imu_rx = imu_source.start(100, None);
 
-        let mut synced_count = 0u64;
         let target = 3u64;
 
+        // Fan-in async channels to tokio mpsc
+        let (bridge_tx, mut bridge_rx) = mpsc::channel(300);
+        let bridge_tx_cam = bridge_tx.clone();
+        let bridge_tx_lidar = bridge_tx.clone();
+        let bridge_tx_imu = bridge_tx.clone();
+        drop(bridge_tx);
+
+        tokio::spawn(async move {
+            while let Ok(packet) = camera_rx.recv().await {
+                if bridge_tx_cam.send(packet).await.is_err() {
+                    break;
+                }
+            }
+        });
+        tokio::spawn(async move {
+            while let Ok(packet) = lidar_rx.recv().await {
+                if bridge_tx_lidar.send(packet).await.is_err() {
+                    break;
+                }
+            }
+        });
+        tokio::spawn(async move {
+            while let Ok(packet) = imu_rx.recv().await {
+                if bridge_tx_imu.send(packet).await.is_err() {
+                    break;
+                }
+            }
+        });
+
         let handle = tokio::spawn(async move {
-            loop {
-                tokio::select! {
-                    Some(p) = camera_rx.recv() => {
-                        if let Some(_frame) = sync_engine.push(p) {
-                            synced_count += 1;
-                            if synced_count >= target { break; }
-                        }
+            let mut synced_count = 0u64;
+            while let Some(p) = bridge_rx.recv().await {
+                if let Some(_frame) = sync_engine.push(p) {
+                    synced_count += 1;
+                    if synced_count >= target {
+                        break;
                     }
-                    Some(p) = lidar_rx.recv() => {
-                        if let Some(_frame) = sync_engine.push(p) {
-                            synced_count += 1;
-                            if synced_count >= target { break; }
-                        }
-                    }
-                    Some(p) = imu_rx.recv() => {
-                        // IMU updates motion intensity but doesn't produce frames
-                        let _ = sync_engine.push(p);
-                    }
-                    else => break,
                 }
             }
             synced_count

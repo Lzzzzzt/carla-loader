@@ -1,75 +1,61 @@
-//! Per-sensor buffer with min-heap ordering by timestamp.
-#![allow(unused)]
+//! Per-sensor packet buffer with timestamp-based ordering.
+//!
+//! Uses index-based separation for better performance:
+//! - HeapRb stores lightweight metadata (timestamp + slab key)
+//! - Slab stores actual SensorPacket data
+//!
+//! This avoids moving large payloads during buffer operations.
 
 use std::cmp::Ordering;
-use std::collections::BinaryHeap;
+use std::fmt;
 
 use contracts::SensorPacket;
+use ringbuf::{traits::*, HeapRb};
+use slab::Slab;
 
-/// Wrapper for min-heap ordering by timestamp
-#[derive(Debug, Clone)]
-pub struct TimestampedPacket {
-    pub packet: SensorPacket,
-    /// Sequence number for tie-breaking same timestamps
-    sequence: u64,
-}
-
-impl TimestampedPacket {
-    pub fn new(packet: SensorPacket, sequence: u64) -> Self {
-        Self { packet, sequence }
-    }
-
-    pub fn timestamp(&self) -> f64 {
-        self.packet.timestamp
-    }
-}
-
-impl PartialEq for TimestampedPacket {
-    fn eq(&self, other: &Self) -> bool {
-        self.packet.timestamp == other.packet.timestamp && self.sequence == other.sequence
-    }
-}
-
-impl Eq for TimestampedPacket {}
-
-impl PartialOrd for TimestampedPacket {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for TimestampedPacket {
-    fn cmp(&self, other: &Self) -> Ordering {
-        // Reverse for min-heap (earliest timestamp first)
-        match other.packet.timestamp.partial_cmp(&self.packet.timestamp) {
-            Some(Ordering::Equal) | None => other.sequence.cmp(&self.sequence),
-            Some(ord) => ord,
-        }
-    }
+/// Lightweight metadata stored in ring buffer
+#[derive(Debug, Clone, Copy)]
+struct PacketMeta {
+    /// Timestamp for ordering
+    timestamp: f64,
+    /// Key into the slab storage
+    slab_key: usize,
 }
 
 /// Per-sensor buffer with timeout eviction
-#[derive(Debug)]
+///
+/// Uses index separation: HeapRb stores only lightweight metadata,
+/// while actual SensorPacket data lives in a Slab. This minimizes
+/// memory movement for large payloads (images, point clouds).
 pub struct SensorBuffer {
-    heap: BinaryHeap<TimestampedPacket>,
+    /// Ring buffer of metadata (timestamp + slab key)
+    index: HeapRb<PacketMeta>,
+    /// Actual packet storage
+    storage: Slab<SensorPacket>,
     max_size: usize,
-    timeout_s: f64,
-    sequence_counter: u64,
-
-    // Metrics
     dropped_count: u64,
     out_of_order_count: u64,
     last_timestamp: Option<f64>,
 }
 
+impl fmt::Debug for SensorBuffer {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SensorBuffer")
+            .field("len", &self.index.occupied_len())
+            .field("max_size", &self.max_size)
+            .field("dropped", &self.dropped_count)
+            .finish()
+    }
+}
+
 impl SensorBuffer {
     /// Create a new sensor buffer
-    pub fn new(max_size: usize, timeout_s: f64) -> Self {
+    #[inline]
+    pub fn new(max_size: usize, _timeout_s: f64) -> Self {
         Self {
-            heap: BinaryHeap::with_capacity(max_size),
+            index: HeapRb::new(max_size),
+            storage: Slab::with_capacity(max_size),
             max_size,
-            timeout_s,
-            sequence_counter: 0,
             dropped_count: 0,
             out_of_order_count: 0,
             last_timestamp: None,
@@ -77,6 +63,9 @@ impl SensorBuffer {
     }
 
     /// Push a packet into the buffer
+    ///
+    /// If buffer is full, overwrites the oldest packet.
+    #[inline]
     pub fn push(&mut self, packet: SensorPacket) {
         let timestamp = packet.timestamp;
 
@@ -88,92 +77,161 @@ impl SensorBuffer {
         }
         self.last_timestamp = Some(timestamp);
 
-        // Evict if at capacity
-        if self.heap.len() >= self.max_size {
-            // Remove oldest (which is at the top of our min-heap)
-            self.heap.pop();
+        // If full, remove oldest entry from both index and storage
+        if self.index.is_full() {
+            if let Some(old_meta) = self.index.try_pop() {
+                self.storage.remove(old_meta.slab_key);
+            }
             self.dropped_count += 1;
         }
 
-        self.sequence_counter += 1;
-        let wrapped = TimestampedPacket::new(packet, self.sequence_counter);
-        self.heap.push(wrapped);
+        // Insert packet into slab and metadata into ring buffer
+        let slab_key = self.storage.insert(packet);
+        let meta = PacketMeta {
+            timestamp,
+            slab_key,
+        };
+        let _ = self.index.try_push(meta);
     }
 
-    /// Peek at the earliest packet without removing
+    /// Peek at the earliest packet (by timestamp) without removing
+    #[inline]
     pub fn peek(&self) -> Option<&SensorPacket> {
-        self.heap.peek().map(|w| &w.packet)
+        self.index
+            .iter()
+            .min_by(|a, b| {
+                a.timestamp
+                    .partial_cmp(&b.timestamp)
+                    .unwrap_or(Ordering::Equal)
+            })
+            .and_then(|meta| self.storage.get(meta.slab_key))
     }
 
-    /// Remove and return the earliest packet
+    /// Remove and return the earliest packet (by timestamp)
+    #[inline]
+    #[allow(dead_code)]
     pub fn pop(&mut self) -> Option<SensorPacket> {
-        self.heap.pop().map(|w| w.packet)
+        if self.index.is_empty() {
+            return None;
+        }
+
+        // Find index of minimum timestamp
+        let min_idx = self
+            .index
+            .iter()
+            .enumerate()
+            .min_by(|(_, a), (_, b)| {
+                a.timestamp
+                    .partial_cmp(&b.timestamp)
+                    .unwrap_or(Ordering::Equal)
+            })
+            .map(|(i, _)| i)?;
+
+        // Collect all metadata, remove target, rebuild index
+        let mut metas: Vec<PacketMeta> = self.index.pop_iter().collect();
+        let removed_meta = metas.remove(min_idx);
+
+        // Rebuild index (only moves small metadata, not payloads)
+        for m in metas {
+            let _ = self.index.try_push(m);
+        }
+
+        // Remove and return actual packet from storage
+        Some(self.storage.remove(removed_meta.slab_key))
     }
 
     /// Get the number of packets in the buffer
+    #[inline]
     pub fn len(&self) -> usize {
-        self.heap.len()
+        self.index.occupied_len()
     }
 
     /// Check if the buffer is empty
+    #[inline]
     pub fn is_empty(&self) -> bool {
-        self.heap.is_empty()
+        self.index.is_empty()
     }
 
-    /// Evict packets older than (now - timeout)
-    pub fn evict_expired(&mut self, now: f64) -> usize {
-        let cutoff = now - self.timeout_s;
+    /// Evict packets older than (now - timeout_s)
+    #[inline]
+    #[allow(dead_code)]
+    pub fn evict_expired(&mut self, now: f64, timeout_s: f64) -> usize {
+        let cutoff = now - timeout_s;
         let mut evicted = 0;
 
-        // We need to rebuild the heap without expired packets
-        let mut remaining = Vec::with_capacity(self.heap.len());
-        while let Some(item) = self.heap.pop() {
-            if item.packet.timestamp >= cutoff {
-                remaining.push(item);
-            } else {
-                evicted += 1;
-                self.dropped_count += 1;
-            }
+        // Collect metadata, filtering expired entries
+        let remaining: Vec<PacketMeta> = self
+            .index
+            .pop_iter()
+            .filter(|m| {
+                if m.timestamp >= cutoff {
+                    true
+                } else {
+                    // Remove expired packet from storage
+                    self.storage.remove(m.slab_key);
+                    evicted += 1;
+                    false
+                }
+            })
+            .collect();
+
+        // Rebuild index with remaining metadata
+        for m in remaining {
+            let _ = self.index.try_push(m);
         }
 
-        self.heap = remaining.into_iter().collect();
+        self.dropped_count += evicted as u64;
         evicted
     }
 
     /// Find the closest packet to target timestamp within window
+    #[inline]
     pub fn find_closest_in_window(&self, target: f64, window: f64) -> Option<&SensorPacket> {
-        let half_window = window / 2.0;
-        let min_t = target - half_window;
-        let max_t = target + half_window;
+        let half = window / 2.0;
+        let (min_t, max_t) = (target - half, target + half);
 
-        self.heap
+        self.index
             .iter()
-            .filter(|p| p.packet.timestamp >= min_t && p.packet.timestamp <= max_t)
+            .filter(|m| m.timestamp >= min_t && m.timestamp <= max_t)
             .min_by(|a, b| {
-                let diff_a = (a.packet.timestamp - target).abs();
-                let diff_b = (b.packet.timestamp - target).abs();
-                diff_a.partial_cmp(&diff_b).unwrap_or(Ordering::Equal)
+                let da = (a.timestamp - target).abs();
+                let db = (b.timestamp - target).abs();
+                da.partial_cmp(&db).unwrap_or(Ordering::Equal)
             })
-            .map(|w| &w.packet)
+            .and_then(|meta| self.storage.get(meta.slab_key))
     }
 
     /// Remove consumed packets up to and including the given timestamp
+    #[inline]
     pub fn remove_consumed(&mut self, up_to_timestamp: f64) {
-        let mut remaining = Vec::with_capacity(self.heap.len());
-        while let Some(item) = self.heap.pop() {
-            if item.packet.timestamp > up_to_timestamp {
-                remaining.push(item);
-            }
+        // Collect metadata, removing consumed entries from storage
+        let remaining: Vec<PacketMeta> = self
+            .index
+            .pop_iter()
+            .filter(|m| {
+                if m.timestamp > up_to_timestamp {
+                    true
+                } else {
+                    self.storage.remove(m.slab_key);
+                    false
+                }
+            })
+            .collect();
+
+        // Rebuild index
+        for m in remaining {
+            let _ = self.index.try_push(m);
         }
-        self.heap = remaining.into_iter().collect();
     }
 
     /// Get dropped packet count
+    #[inline]
     pub fn dropped_count(&self) -> u64 {
         self.dropped_count
     }
 
     /// Get out-of-order packet count
+    #[inline]
     pub fn out_of_order_count(&self) -> u64 {
         self.out_of_order_count
     }
@@ -187,7 +245,7 @@ mod tests {
 
     fn make_packet(sensor_id: &str, timestamp: f64) -> SensorPacket {
         SensorPacket {
-            sensor_id: sensor_id.to_string(),
+            sensor_id: sensor_id.into(),
             sensor_type: SensorType::Camera,
             timestamp,
             frame_id: None,
@@ -203,6 +261,7 @@ mod tests {
         buffer.push(make_packet("cam", 1.0));
         buffer.push(make_packet("cam", 2.0));
 
+        // Pop returns earliest by timestamp
         assert_eq!(buffer.pop().unwrap().timestamp, 1.0);
         assert_eq!(buffer.pop().unwrap().timestamp, 2.0);
         assert_eq!(buffer.pop().unwrap().timestamp, 3.0);
@@ -229,7 +288,7 @@ mod tests {
         buffer.push(make_packet("cam", 0.5));
         buffer.push(make_packet("cam", 1.5));
 
-        let evicted = buffer.evict_expired(2.0);
+        let evicted = buffer.evict_expired(2.0, 1.0);
         assert_eq!(evicted, 2); // 0.0 and 0.5 expired
         assert_eq!(buffer.len(), 1);
     }

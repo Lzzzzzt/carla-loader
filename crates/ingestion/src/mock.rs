@@ -2,16 +2,17 @@
 //!
 //! 用于无 CARLA 环境的测试。
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::thread;
 use std::time::Duration;
 
+use async_channel::{bounded, Receiver};
 use bytes::Bytes;
 use contracts::{
     GnssData, ImageData, ImageFormat, ImuData, PointCloudData, SensorPacket, SensorPayload,
     SensorType, Vector3,
 };
-use tokio::sync::mpsc;
 use tracing::{debug, trace};
 
 use crate::config::IngestionMetrics;
@@ -120,15 +121,15 @@ impl MockSensorSource {
         &self,
         channel_capacity: usize,
         metrics: Option<Arc<IngestionMetrics>>,
-    ) -> mpsc::Receiver<SensorPacket> {
-        let (tx, rx) = mpsc::channel(channel_capacity);
+    ) -> Receiver<SensorPacket> {
+        let (tx, rx) = bounded(channel_capacity);
         let config = self.config.clone();
         let running = self.running.clone();
         let metrics = metrics.unwrap_or_else(|| Arc::new(IngestionMetrics::new()));
 
         running.store(true, Ordering::SeqCst);
 
-        tokio::spawn(async move {
+        thread::spawn(move || {
             let interval = Duration::from_secs_f64(1.0 / config.frequency_hz);
             let mut frame_id: u64 = 0;
             let start_time = std::time::Instant::now();
@@ -183,7 +184,7 @@ impl MockSensorSource {
                 };
 
                 let packet = SensorPacket {
-                    sensor_id: config.sensor_id.clone(),
+                    sensor_id: config.sensor_id.clone().into(),
                     sensor_type: config.sensor_type,
                     timestamp,
                     frame_id: Some(frame_id),
@@ -192,7 +193,7 @@ impl MockSensorSource {
 
                 metrics.record_received();
 
-                if tx.send(packet).await.is_err() {
+                if tx.send_blocking(packet).is_err() {
                     debug!(sensor_id = %config.sensor_id, "mock sensor channel closed");
                     break;
                 }
@@ -204,7 +205,7 @@ impl MockSensorSource {
                     "mock packet sent"
                 );
 
-                tokio::time::sleep(interval).await;
+                thread::sleep(interval);
             }
 
             debug!(sensor_id = %config.sensor_id, "mock sensor source stopped");
@@ -228,14 +229,14 @@ impl MockSensorSource {
 mod tests {
     use super::*;
 
-    #[tokio::test]
-    async fn test_mock_camera_source() {
+    #[test]
+    fn test_mock_camera_source() {
         let source = MockSensorSource::camera("test_cam", 100.0, 100, 100);
-        let mut rx = source.start(10, None);
+        let rx = source.start(10, None);
 
         // 接收几个包
         for _ in 0..3 {
-            let packet = rx.recv().await.unwrap();
+            let packet = rx.recv_blocking().unwrap();
             assert_eq!(packet.sensor_id, "test_cam");
             assert_eq!(packet.sensor_type, SensorType::Camera);
             assert!(packet.frame_id.is_some());
@@ -251,12 +252,12 @@ mod tests {
         source.stop();
     }
 
-    #[tokio::test]
-    async fn test_mock_imu_source() {
+    #[test]
+    fn test_mock_imu_source() {
         let source = MockSensorSource::imu("test_imu", 100.0);
-        let mut rx = source.start(10, None);
+        let rx = source.start(10, None);
 
-        let packet = rx.recv().await.unwrap();
+        let packet = rx.recv_blocking().unwrap();
         assert_eq!(packet.sensor_type, SensorType::Imu);
 
         if let SensorPayload::Imu(imu) = packet.payload {
