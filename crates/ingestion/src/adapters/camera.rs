@@ -1,4 +1,4 @@
-//! Camera 传感器适配器
+//! Camera sensor adapter
 
 #[cfg(feature = "real-carla")]
 use bytes::Bytes;
@@ -8,7 +8,7 @@ use contracts::{ImageData, ImageFormat, SensorPayload};
 #[cfg(feature = "real-carla")]
 use carla::sensor::data::Image;
 
-/// 将 CARLA Image 转换为 SensorPayload
+/// Convert CARLA Image to SensorPayload
 #[cfg(feature = "real-carla")]
 #[inline]
 fn image_to_payload(image: &Image) -> SensorPayload {

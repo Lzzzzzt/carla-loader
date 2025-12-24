@@ -1,6 +1,6 @@
-//! WorldBlueprint - Config Loader 输出
+//! WorldBlueprint - Config Loader output
 //!
-//! 描述完整的世界配置：地图、天气、车辆、传感器、同步策略、输出路由。
+//! Describes the complete world configuration: map, weather, vehicles, sensors, sync policy, output routing.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -8,53 +8,53 @@ use validator::Validate;
 
 use crate::{AdaKFConfig, BufferConfig, MissingDataStrategy, SyncEngineConfig, WindowConfig};
 
-/// 配置版本
+/// Configuration version
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum ConfigVersion {
     #[default]
     V1,
 }
 
-/// 完整的世界配置蓝图
+/// Complete world configuration blueprint
 #[derive(Debug, Clone, Serialize, Deserialize, Validate)]
 pub struct WorldBlueprint {
-    /// 配置版本
+    /// Configuration version
     #[serde(default)]
     pub version: ConfigVersion,
 
-    /// 世界设置
+    /// World settings
     #[validate(nested)]
     pub world: WorldConfig,
 
-    /// 车辆定义列表
+    /// Vehicle definition list
     #[validate(nested)]
     pub vehicles: Vec<VehicleConfig>,
 
-    /// 同步策略配置
+    /// Sync policy configuration
     #[validate(nested)]
     pub sync: SyncConfig,
 
-    /// 输出路由配置
+    /// Output routing configuration
     #[validate(nested)]
     pub sinks: Vec<SinkConfig>,
 }
 
-/// 世界配置：地图、天气等
+/// World configuration: map, weather, etc.
 #[derive(Debug, Clone, Serialize, Deserialize, Validate)]
 pub struct WorldConfig {
-    /// 地图名称 (e.g., "Town01")
+    /// Map name (e.g., "Town01")
     #[validate(length(min = 1, message = "map name cannot be empty"))]
     pub map: String,
 
-    /// 天气预设 (可选)
+    /// Weather preset (optional)
     #[serde(default)]
     pub weather: Option<WeatherPreset>,
 
-    /// CARLA 服务器地址
+    /// CARLA server address
     #[serde(default = "default_carla_host")]
     pub carla_host: String,
 
-    /// CARLA 服务器端口
+    /// CARLA server port
     #[serde(default = "default_carla_port")]
     #[validate(range(min = 1, max = 65535))]
     pub carla_port: u16,
@@ -68,7 +68,7 @@ fn default_carla_port() -> u16 {
     2000
 }
 
-/// 天气预设
+/// Weather preset
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum WeatherPreset {
@@ -80,7 +80,7 @@ pub enum WeatherPreset {
     Custom(WeatherParams),
 }
 
-/// 自定义天气参数
+/// Custom weather parameters
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WeatherParams {
     pub cloudiness: f32,
@@ -88,33 +88,33 @@ pub struct WeatherParams {
     pub sun_altitude_angle: f32,
 }
 
-/// 车辆配置
+/// Vehicle configuration
 #[derive(Debug, Clone, Serialize, Deserialize, Validate)]
 pub struct VehicleConfig {
-    /// 唯一标识符
+    /// Unique identifier
     #[validate(length(min = 1, message = "vehicle id cannot be empty"))]
     pub id: String,
 
-    /// 蓝图名称 (e.g., "vehicle.tesla.model3")
+    /// Blueprint name (e.g., "vehicle.tesla.model3")
     #[validate(length(min = 1, message = "blueprint name cannot be empty"))]
     pub blueprint: String,
 
-    /// 初始位姿
+    /// Initial pose
     pub spawn_point: Option<Transform>,
 
-    /// 挂载的传感器列表
+    /// Attached sensor list
     #[serde(default)]
     #[validate(nested)]
     pub sensors: Vec<SensorConfig>,
 }
 
-/// 3D 变换：位置 + 旋转
+/// 3D transform: position + rotation
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct Transform {
-    /// 位置 (x, y, z) 单位：米
+    /// Position (x, y, z) in meters
     pub location: Location,
 
-    /// 旋转 (pitch, yaw, roll) 单位：度
+    /// Rotation (pitch, yaw, roll) in degrees
     pub rotation: Rotation,
 }
 
@@ -132,29 +132,29 @@ pub struct Rotation {
     pub roll: f64,
 }
 
-/// 传感器配置
+/// Sensor configuration
 #[derive(Debug, Clone, Serialize, Deserialize, Validate)]
 pub struct SensorConfig {
-    /// 唯一标识符
+    /// Unique identifier
     #[validate(length(min = 1, message = "sensor id cannot be empty"))]
     pub id: String,
 
-    /// 传感器类型
+    /// Sensor type
     pub sensor_type: SensorType,
 
-    /// 相对于父 actor 的挂载位姿
+    /// Mount pose relative to parent actor
     pub transform: Transform,
 
-    /// 采样频率 (Hz)，必须 > 0
+    /// Sampling frequency (Hz), must be > 0
     #[validate(range(exclusive_min = 0.0, message = "frequency_hz must be > 0"))]
     pub frequency_hz: f64,
 
-    /// 传感器特定属性
+    /// Sensor-specific attributes
     #[serde(default)]
     pub attributes: HashMap<String, String>,
 }
 
-/// 传感器类型
+/// Sensor type
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SensorType {
@@ -165,29 +165,29 @@ pub enum SensorType {
     Radar,
 }
 
-/// 同步策略配置
+/// Sync policy configuration
 #[derive(Debug, Clone, Serialize, Deserialize, Validate)]
 #[validate(schema(function = "validate_sync_window"))]
 pub struct SyncConfig {
-    /// 主时钟传感器 ID (用于确定参考时间)
+    /// Primary clock sensor ID (used to determine reference time)
     #[validate(length(min = 1, message = "primary_sensor_id cannot be empty"))]
     pub primary_sensor_id: String,
 
-    /// 同步窗口下限 (秒)
+    /// Sync window lower bound (seconds)
     #[serde(default = "default_min_window")]
     #[validate(range(min = 0.0))]
     pub min_window_sec: f64,
 
-    /// 同步窗口上限 (秒)
+    /// Sync window upper bound (seconds)
     #[serde(default = "default_max_window")]
     #[validate(range(min = 0.0))]
     pub max_window_sec: f64,
 
-    /// 缺帧策略
+    /// Missing frame policy
     #[serde(default)]
     pub missing_frame_policy: MissingFramePolicy,
 
-    /// 丢包策略
+    /// Drop policy
     #[serde(default)]
     pub drop_policy: DropPolicy,
 
@@ -244,45 +244,45 @@ fn default_max_window() -> f64 {
     0.100 // 100ms
 }
 
-/// 缺帧处理策略
+/// Missing frame handling policy
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MissingFramePolicy {
-    /// 丢弃该同步帧
+    /// Drop the sync frame
     #[default]
     Drop,
-    /// 使用空帧占位
+    /// Use empty frame as placeholder
     Empty,
-    /// 插值填充
+    /// Interpolate to fill
     Interpolate,
 }
 
-/// 丢包策略 (背压满时)
+/// Drop policy (when backpressure is full)
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DropPolicy {
-    /// 丢弃最旧的包
+    /// Drop oldest packets
     #[default]
     DropOldest,
-    /// 丢弃最新的包
+    /// Drop newest packets
     DropNewest,
 }
 
-/// Sink 输出配置
+/// Sink output configuration
 #[derive(Debug, Clone, Serialize, Deserialize, Validate)]
 pub struct SinkConfig {
-    /// Sink 名称
+    /// Sink name
     #[validate(length(min = 1, message = "sink name cannot be empty"))]
     pub name: String,
 
-    /// Sink 类型
+    /// Sink type
     pub sink_type: SinkType,
 
-    /// 队列容量
+    /// Queue capacity
     #[serde(default = "default_queue_capacity")]
     pub queue_capacity: usize,
 
-    /// 类型特定参数
+    /// Type-specific parameters
     #[serde(default)]
     pub params: HashMap<String, String>,
 }
@@ -291,15 +291,15 @@ fn default_queue_capacity() -> usize {
     100
 }
 
-/// Sink 类型
+/// Sink type
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SinkType {
-    /// 日志输出
+    /// Log output
     Log,
-    /// 文件输出
+    /// File output
     File,
-    /// 网络输出 (UDP)
+    /// Network output (UDP)
     Network,
 }
 

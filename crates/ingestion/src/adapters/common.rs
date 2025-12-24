@@ -1,4 +1,4 @@
-//! 适配器公共工具函数
+//! Adapter common utility functions
 
 use std::sync::Arc;
 
@@ -8,7 +8,7 @@ use tracing::trace;
 
 use crate::config::IngestionMetrics;
 
-/// 发送数据包，处理背压策略
+/// Send packet, handling backpressure policy
 #[inline]
 pub fn send_packet(
     tx: &Sender<SensorPacket>,
@@ -28,7 +28,7 @@ pub fn send_packet(
                     trace!(sensor_id = %sensor_id, "packet dropped (newest)");
                 }
                 DropPolicy::DropOldest => {
-                    // TODO: 需要使用支持 pop 的通道实现真正的 DropOldest
+                    // TODO: Need to use a channel that supports pop to implement true DropOldest
                     trace!(sensor_id = %sensor_id, "packet dropped (oldest fallback)");
                 }
             }
@@ -39,22 +39,22 @@ pub fn send_packet(
     }
 }
 
-/// 将 POD 切片转换为 bytes::Bytes (零拷贝版本，共享内存)
+/// Convert POD slice to bytes::Bytes (zero-copy version, shared memory)
 ///
 /// # Safety
-/// 调用者必须确保:
-/// 1. T 是 POD 类型（plain old data）
-/// 2. slice 的生命周期足够长，或数据会被立即消费
+/// Caller must ensure:
+/// 1. T is a POD type (plain old data)
+/// 2. slice lifetime is long enough, or data will be consumed immediately
 #[inline]
 #[allow(dead_code)] // Used by real-carla feature adapters
 pub unsafe fn pod_slice_to_bytes_unchecked<T>(slice: &[T]) -> bytes::Bytes {
     let ptr = slice.as_ptr() as *const u8;
     let len = std::mem::size_of_val(slice);
-    // 注意: 这里必须复制，因为 CARLA 回调数据在回调返回后可能失效
+    // Note: Must copy here because CARLA callback data may become invalid after callback returns
     bytes::Bytes::copy_from_slice(std::slice::from_raw_parts(ptr, len))
 }
 
-/// 将实现 bytemuck::Pod 的切片安全转换为 bytes::Bytes
+/// Safely convert slice implementing bytemuck::Pod to bytes::Bytes
 #[inline]
 #[allow(dead_code)]
 pub fn pod_slice_to_bytes<T: bytemuck::Pod>(slice: &[T]) -> bytes::Bytes {

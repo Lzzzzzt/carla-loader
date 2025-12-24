@@ -1,86 +1,86 @@
-//! SyncedFrame - Sync Engine 输出
+//! SyncedFrame - Sync Engine output
 //!
-//! 同步后的帧数据结构。
+//! Synchronized frame data structure.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use crate::{SensorId, SensorPacket, SensorType};
 
-/// 同步后的帧
+/// Synchronized frame
 ///
-/// 包含同一时间窗口内对齐的多传感器数据。
+/// Contains aligned multi-sensor data within the same time window.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncedFrame {
-    /// 同步时间戳 (CARLA simulation time, seconds)
+    /// Sync timestamp (CARLA simulation time, seconds)
     pub t_sync: f64,
 
-    /// 帧序号 (单调递增)
+    /// Frame sequence number (monotonically increasing)
     pub frame_id: u64,
 
-    /// 各传感器的数据包 (sensor_id -> packet)
+    /// Sensor data packets (sensor_id -> packet)
     pub frames: HashMap<SensorId, SensorPacket>,
 
-    /// 同步元信息
+    /// Sync metadata
     pub sync_meta: SyncMeta,
 }
 
-/// 同步元信息
+/// Sync metadata
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SyncMeta {
-    /// 参考时钟传感器 ID
+    /// Reference clock sensor ID
     pub reference_sensor_id: SensorId,
 
-    /// 动态窗口大小 (秒)
+    /// Dynamic window size (seconds)
     pub window_size: f64,
 
-    /// 运动强度 (0-1)，用于自适应窗口
+    /// Motion intensity (0-1), used for adaptive windowing
     pub motion_intensity: Option<f64>,
 
-    /// 各传感器的时间偏移估计 (sensor_id -> offset)
+    /// Time offset estimates per sensor (sensor_id -> offset)
     pub time_offsets: HashMap<SensorId, f64>,
 
-    /// 卡尔曼滤波残差 (用于自适应调参)
+    /// Kalman filter residuals (used for adaptive tuning)
     pub kf_residuals: HashMap<SensorId, f64>,
 
-    /// 缺失的传感器 (本帧无数据)
+    /// Missing sensors (no data in this frame)
     pub missing_sensors: Vec<SensorId>,
 
-    /// 被丢弃的包数量 (过期/乱序)
+    /// Dropped packet count (expired/out-of-order)
     pub dropped_count: u32,
 
-    /// 乱序到达的包数量
+    /// Out-of-order packet count
     pub out_of_order_count: u32,
 }
 
-/// 同步后的数据包 (单个传感器)
+/// Synchronized data packet (single sensor)
 #[derive(Debug, Clone)]
 pub struct SyncedPacket {
-    /// 原始数据包
+    /// Original data packet
     pub packet: SensorPacket,
 
-    /// 校正后的时间戳
+    /// Corrected timestamp
     pub corrected_timestamp: f64,
 
-    /// 是否经过插值
+    /// Whether interpolated
     pub interpolated: bool,
 
-    /// 原始时间戳与参考时刻的差值
+    /// Time delta between original timestamp and reference time
     pub time_delta: f64,
 }
 
-/// 传感器缓冲区状态 (用于诊断)
+/// Sensor buffer status (for diagnostics)
 #[derive(Debug, Clone, Default)]
 pub struct BufferStats {
-    /// 各传感器类型的缓冲深度
+    /// Buffer depth per sensor type
     pub buffer_depths: HashMap<SensorType, usize>,
 
-    /// 总缓冲包数
+    /// Total buffered packets
     pub total_packets: usize,
 
-    /// 最老的时间戳
+    /// Oldest timestamp
     pub oldest_timestamp: Option<f64>,
 
-    /// 最新的时间戳
+    /// Newest timestamp
     pub newest_timestamp: Option<f64>,
 }

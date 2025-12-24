@@ -1,11 +1,11 @@
 //! # CARLA Syncer CLI
 //!
-//! 命令行接口入口点。
+//! Command line interface entry point.
 //!
-//! 提供：
-//! - 配置加载与验证
-//! - 管道编排与生命周期管理
-//! - 优雅关闭处理
+//! Provides:
+//! - Configuration loading and validation
+//! - Pipeline orchestration and lifecycle management
+//! - Graceful shutdown handling
 
 mod cli;
 mod commands;

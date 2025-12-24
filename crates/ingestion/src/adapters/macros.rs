@@ -1,22 +1,22 @@
-//! 传感器适配器宏
+//! Sensor adapter macros
 //!
-//! 使用声明式宏消除适配器中的重复代码模板
+//! Use declarative macros to eliminate repetitive code templates in adapters
 
-/// 定义传感器适配器的通用模板
+/// Define common template for sensor adapters
 ///
-/// 此宏生成所有适配器共享的样板代码，包括：
-/// - 结构体定义
-/// - `new` 和 `new_mock` 构造函数
-/// - `SensorAdapter` trait 实现
-/// - 背压处理和指标记录
+/// This macro generates all boilerplate code shared by adapters, including:
+/// - Structure definition
+/// - `new` and `new_mock` constructors
+/// - `SensorAdapter` trait implementation
+/// - Backpressure handling and metrics recording
 ///
-/// # 用法
+/// # Usage
 /// ```ignore
 /// define_sensor_adapter!(
-///     CameraAdapter,           // 适配器名称
-///     SensorType::Camera,      // 传感器类型
-///     Image,                   // CARLA 数据类型
-///     image_to_payload         // payload 转换函数
+///     CameraAdapter,           // Adapter name
+///     SensorType::Camera,      // Sensor type
+///     Image,                   // CARLA data type
+///     image_to_payload         // Payload conversion function
 /// );
 /// ```
 macro_rules! define_sensor_adapter {

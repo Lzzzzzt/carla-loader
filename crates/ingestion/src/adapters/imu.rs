@@ -1,4 +1,4 @@
-//! IMU 传感器适配器
+//! IMU sensor adapter
 
 #[cfg(feature = "real-carla")]
 use contracts::{ImuData, SensorPayload, Vector3};
@@ -6,7 +6,7 @@ use contracts::{ImuData, SensorPayload, Vector3};
 #[cfg(feature = "real-carla")]
 use carla::sensor::data::ImuMeasurement;
 
-/// 将 IMU 测量转换为 SensorPayload
+/// Convert IMU measurement to SensorPayload
 #[cfg(feature = "real-carla")]
 #[inline]
 fn imu_to_payload(imu: &ImuMeasurement) -> SensorPayload {

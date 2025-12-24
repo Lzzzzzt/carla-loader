@@ -1,6 +1,6 @@
-//! CARLA 客户端抽象
+//! CARLA client abstraction
 //!
-//! 定义与 CARLA 交互的 trait，支持真实实现和 mock 测试。
+//! Defines traits for interacting with CARLA, supporting real implementation and mock testing.
 
 use std::future::Future;
 
@@ -8,38 +8,38 @@ use contracts::{ActorId, SensorSource, SensorType, Transform};
 
 use crate::error::Result;
 
-/// CARLA 客户端 trait
+/// CARLA client trait
 ///
-/// 抽象 CARLA 核心操作，便于测试和未来替换实现。
-/// 支持真实 CARLA 客户端和 Mock 客户端的统一接口。
+/// Abstracts CARLA core operations for testing and future implementation replacement.
+/// Supports unified interface for real CARLA client and Mock client.
 pub trait CarlaClient: Send + Sync {
-    /// 连接到 CARLA 服务器
+    /// Connect to CARLA server
     fn connect(&mut self, host: &str, port: u16) -> impl Future<Output = Result<()>> + Send;
 
-    /// Spawn 车辆
+    /// Spawn vehicle
     ///
     /// # Arguments
-    /// * `blueprint` - 蓝图名称，如 "vehicle.tesla.model3"
-    /// * `transform` - 初始位姿
+    /// * `blueprint` - Blueprint name, e.g., "vehicle.tesla.model3"
+    /// * `transform` - Initial pose
     ///
     /// # Returns
-    /// 新创建的 actor ID
+    /// Newly created actor ID
     fn spawn_vehicle(
         &self,
         blueprint: &str,
         transform: Option<Transform>,
     ) -> impl Future<Output = Result<ActorId>> + Send;
 
-    /// Spawn 传感器并附加到父 actor
+    /// Spawn sensor and attach to parent actor
     ///
     /// # Arguments
-    /// * `blueprint` - 蓝图名称，如 "sensor.camera.rgb"
-    /// * `transform` - 相对于父 actor 的位姿
-    /// * `parent_id` - 父 actor ID
-    /// * `attributes` - 传感器属性
+    /// * `blueprint` - Blueprint name, e.g., "sensor.camera.rgb"
+    /// * `transform` - Pose relative to parent actor
+    /// * `parent_id` - Parent actor ID
+    /// * `attributes` - Sensor attributes
     ///
     /// # Returns
-    /// 新创建的 sensor actor ID
+    /// Newly created sensor actor ID
     fn spawn_sensor(
         &self,
         blueprint: &str,
@@ -48,26 +48,26 @@ pub trait CarlaClient: Send + Sync {
         attributes: &std::collections::HashMap<String, String>,
     ) -> impl Future<Output = Result<ActorId>> + Send;
 
-    /// 销毁 actor
+    /// Destroy actor
     ///
-    /// 幂等操作：如果 actor 不存在，返回 Ok
+    /// Idempotent operation: returns Ok if actor doesn't exist
     fn destroy_actor(&self, actor_id: ActorId) -> impl Future<Output = Result<()>> + Send;
 
-    /// 检查 actor 是否存在
+    /// Check if actor exists
     fn actor_exists(&self, actor_id: ActorId) -> impl Future<Output = Result<bool>> + Send;
 
-    /// 获取传感器数据源
+    /// Get sensor data source
     ///
-    /// 返回实现 `SensorSource` 的对象，可用于 IngestionPipeline。
-    /// 这是统一 Mock 和 Real 传感器的核心接口。
+    /// Returns an object implementing `SensorSource`, usable by IngestionPipeline.
+    /// This is the core interface for unifying Mock and Real sensors.
     ///
     /// # Arguments
-    /// * `actor_id` - 传感器的 actor ID
-    /// * `sensor_id` - 传感器配置 ID（用于日志和追踪）
-    /// * `sensor_type` - 传感器类型
+    /// * `actor_id` - Sensor's actor ID
+    /// * `sensor_id` - Sensor configuration ID (for logging and tracing)
+    /// * `sensor_type` - Sensor type
     ///
     /// # Returns
-    /// 实现 `SensorSource` 的 boxed trait object，如果 actor 不存在返回 None
+    /// Boxed trait object implementing `SensorSource`, None if actor doesn't exist
     fn get_sensor_source(
         &self,
         actor_id: ActorId,

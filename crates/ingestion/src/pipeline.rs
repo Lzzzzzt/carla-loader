@@ -1,4 +1,4 @@
-//! Ingestion Pipeline 主入口
+//! Ingestion Pipeline main entry
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -20,30 +20,30 @@ use crate::generic_adapter::GenericSensorAdapter;
 
 /// Ingestion Pipeline
 ///
-/// 管理多个传感器适配器，提供统一的数据流输出。
-/// 支持 Mock 和 Real 传感器的统一注册。
+/// Manages multiple sensor adapters, provides unified data stream output.
+/// Supports unified registration of Mock and Real sensors.
 pub struct IngestionPipeline {
-    /// 已注册的适配器
+    /// Registered adapters
     adapters: HashMap<String, Box<dyn SensorAdapter>>,
 
-    /// 共享的 metrics
+    /// Shared metrics
     metrics: Arc<IngestionMetrics>,
 
-    /// 数据发送端（所有 adapter 共享）
+    /// Data sender (shared by all adapters)
     tx: Sender<SensorPacket>,
 
-    /// 数据接收端
+    /// Data receiver
     rx: Option<Receiver<SensorPacket>>,
 
-    /// 默认背压配置
+    /// Default backpressure configuration
     default_config: BackpressureConfig,
 }
 
 impl IngestionPipeline {
-    /// 创建新的 Ingestion Pipeline
+    /// Create new Ingestion Pipeline
     ///
     /// # Arguments
-    /// * `channel_capacity` - 通道容量
+    /// * `channel_capacity` - Channel capacity
     pub fn new(channel_capacity: usize) -> Self {
         let (tx, rx) = bounded(channel_capacity);
 
@@ -59,7 +59,7 @@ impl IngestionPipeline {
         }
     }
 
-    /// 使用自定义背压配置创建
+    /// Create with custom backpressure configuration
     pub fn with_config(config: BackpressureConfig) -> Self {
         let (tx, rx) = bounded(config.channel_capacity);
 
@@ -72,14 +72,14 @@ impl IngestionPipeline {
         }
     }
 
-    /// 注册传感器数据源（统一接口）
+    /// Register sensor data source (unified interface)
     ///
-    /// 这是推荐的注册方法，支持 Mock 和 Real 传感器。
+    /// This is the recommended registration method, supports Mock and Real sensors.
     ///
     /// # Arguments
-    /// * `sensor_id` - 传感器配置 ID
-    /// * `source` - 实现 `SensorSource` trait 的数据源
-    /// * `config` - 可选的背压配置
+    /// * `sensor_id` - Sensor configuration ID
+    /// * `source` - Data source implementing `SensorSource` trait
+    /// * `config` - Optional backpressure configuration
     #[instrument(
         name = "ingestion_register_sensor_source",
         skip(self, source, config),
@@ -100,9 +100,9 @@ impl IngestionPipeline {
         self.adapters.insert(sensor_id, Box::new(adapter));
     }
 
-    /// 注册传感器（使用 carla-rust Sensor）
+    /// Register sensor (using carla-rust Sensor)
     ///
-    /// 保留用于向后兼容，建议使用 `register_sensor_source`。
+    /// Retained for backward compatibility, recommend using `register_sensor_source`.
     #[cfg(feature = "real-carla")]
     #[instrument(
         name = "ingestion_register_sensor",
@@ -144,7 +144,7 @@ impl IngestionPipeline {
         }
     }
 
-    /// 启动所有已注册的传感器
+    /// Start all registered sensors
     #[instrument(name = "ingestion_start_all", skip(self))]
     pub fn start_all(&self) {
         info!(count = self.adapters.len(), "starting all sensor adapters");
@@ -153,7 +153,7 @@ impl IngestionPipeline {
         }
     }
 
-    /// 停止所有传感器
+    /// Stop all sensors
     #[instrument(name = "ingestion_stop_all", skip(self))]
     pub fn stop_all(&self) {
         info!(count = self.adapters.len(), "stopping all sensor adapters");
@@ -176,24 +176,24 @@ impl IngestionPipeline {
         }
     }
 
-    /// 获取数据流接收端
+    /// Get data stream receiver
     ///
-    /// 注意：只能调用一次，后续调用返回 None
+    /// Note: Can only be called once, subsequent calls return None
     pub fn take_receiver(&mut self) -> Option<Receiver<SensorPacket>> {
         self.rx.take()
     }
 
-    /// 获取 metrics 引用
+    /// Get metrics reference
     pub fn metrics(&self) -> Arc<IngestionMetrics> {
         self.metrics.clone()
     }
 
-    /// 获取已注册的传感器数量
+    /// Get registered sensor count
     pub fn sensor_count(&self) -> usize {
         self.adapters.len()
     }
 
-    /// 检查指定传感器是否正在监听
+    /// Check if specified sensor is listening
     pub fn is_sensor_listening(&self, sensor_id: &str) -> bool {
         self.adapters
             .get(sensor_id)

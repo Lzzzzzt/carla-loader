@@ -1,4 +1,4 @@
-//! 传感器适配器 trait
+//! Sensor adapter trait
 
 use std::sync::Arc;
 
@@ -7,30 +7,30 @@ use contracts::{SensorPacket, SensorType};
 
 use crate::config::IngestionMetrics;
 
-/// 传感器适配器 trait
+/// Sensor adapter trait
 ///
-/// 为每类传感器实现此 trait，负责：
-/// 1. 注册 CARLA 传感器回调
-/// 2. 解析传感器数据
-/// 3. 封装为 `SensorPacket`
-/// 4. 发送到通道（处理背压）
+/// Implement this trait for each sensor type, responsible for:
+/// 1. Registering CARLA sensor callbacks
+/// 2. Parsing sensor data
+/// 3. Wrapping into `SensorPacket`
+/// 4. Sending to channel (handling backpressure)
 pub trait SensorAdapter: Send + Sync {
-    /// 获取传感器 ID
+    /// Get sensor ID
     fn sensor_id(&self) -> &str;
 
-    /// 获取传感器类型
+    /// Get sensor type
     fn sensor_type(&self) -> SensorType;
 
-    /// 启动传感器数据采集
+    /// Start sensor data collection
     ///
     /// # Arguments
-    /// * `tx` - 数据包发送通道
-    /// * `metrics` - 共享的 ingestion 指标
+    /// * `tx` - Data packet sending channel
+    /// * `metrics` - Shared ingestion metrics
     fn start(&self, tx: Sender<SensorPacket>, metrics: Arc<IngestionMetrics>);
 
-    /// 停止传感器数据采集
+    /// Stop sensor data collection
     fn stop(&self);
 
-    /// 检查传感器是否正在监听
+    /// Check if sensor is listening
     fn is_listening(&self) -> bool;
 }

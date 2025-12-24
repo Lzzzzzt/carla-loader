@@ -1,6 +1,6 @@
-//! Mock 传感器源
+//! Mock sensor source
 //!
-//! 用于无 CARLA 环境的测试。
+//! For testing without CARLA environment.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -17,25 +17,25 @@ use tracing::{debug, trace};
 
 use crate::config::IngestionMetrics;
 
-/// Mock 传感器源配置
+/// Mock sensor source configuration
 #[derive(Debug, Clone)]
 pub struct MockSensorConfig {
-    /// 传感器 ID
+    /// Sensor ID
     pub sensor_id: String,
 
-    /// 传感器类型
+    /// Sensor type
     pub sensor_type: SensorType,
 
-    /// 发送频率 (Hz)
+    /// Send frequency (Hz)
     pub frequency_hz: f64,
 
-    /// 图像宽度（仅 Camera）
+    /// Image width (Camera only)
     pub image_width: u32,
 
-    /// 图像高度（仅 Camera）  
+    /// Image height (Camera only)
     pub image_height: u32,
 
-    /// LiDAR 点数（仅 Lidar）
+    /// LiDAR point count (Lidar only)
     pub lidar_points: u32,
 }
 
@@ -52,16 +52,16 @@ impl Default for MockSensorConfig {
     }
 }
 
-/// Mock 传感器源
+/// Mock sensor source
 ///
-/// 生成模拟的传感器数据用于测试。
+/// Generates simulated sensor data for testing.
 pub struct MockSensorSource {
     config: MockSensorConfig,
     running: Arc<AtomicBool>,
 }
 
 impl MockSensorSource {
-    /// 创建新的 Mock 传感器源
+    /// Create new Mock sensor source
     pub fn new(config: MockSensorConfig) -> Self {
         Self {
             config,
@@ -69,7 +69,7 @@ impl MockSensorSource {
         }
     }
 
-    /// 创建 Mock Camera 源
+    /// Create Mock Camera source
     pub fn camera(sensor_id: &str, frequency_hz: f64, width: u32, height: u32) -> Self {
         Self::new(MockSensorConfig {
             sensor_id: sensor_id.to_string(),
@@ -81,7 +81,7 @@ impl MockSensorSource {
         })
     }
 
-    /// 创建 Mock LiDAR 源
+    /// Create Mock LiDAR source
     pub fn lidar(sensor_id: &str, frequency_hz: f64, num_points: u32) -> Self {
         Self::new(MockSensorConfig {
             sensor_id: sensor_id.to_string(),
@@ -92,7 +92,7 @@ impl MockSensorSource {
         })
     }
 
-    /// 创建 Mock IMU 源
+    /// Create Mock IMU source
     pub fn imu(sensor_id: &str, frequency_hz: f64) -> Self {
         Self::new(MockSensorConfig {
             sensor_id: sensor_id.to_string(),
@@ -102,7 +102,7 @@ impl MockSensorSource {
         })
     }
 
-    /// 创建 Mock GNSS 源
+    /// Create Mock GNSS source
     pub fn gnss(sensor_id: &str, frequency_hz: f64) -> Self {
         Self::new(MockSensorConfig {
             sensor_id: sensor_id.to_string(),
@@ -112,11 +112,11 @@ impl MockSensorSource {
         })
     }
 
-    /// 启动 Mock 源，返回数据流接收端
+    /// Start Mock source, returns data stream receiver
     ///
     /// # Arguments
-    /// * `channel_capacity` - 通道容量
-    /// * `metrics` - 可选的 metrics 实例
+    /// * `channel_capacity` - Channel capacity
+    /// * `metrics` - Optional metrics instance
     pub fn start(
         &self,
         channel_capacity: usize,
@@ -214,12 +214,12 @@ impl MockSensorSource {
         rx
     }
 
-    /// 停止 Mock 源
+    /// Stop Mock source
     pub fn stop(&self) {
         self.running.store(false, Ordering::SeqCst);
     }
 
-    /// 检查是否正在运行
+    /// Check if running
     pub fn is_running(&self) -> bool {
         self.running.load(Ordering::Relaxed)
     }
@@ -234,7 +234,7 @@ mod tests {
         let source = MockSensorSource::camera("test_cam", 100.0, 100, 100);
         let rx = source.start(10, None);
 
-        // 接收几个包
+        // Receive a few packets
         for _ in 0..3 {
             let packet = rx.recv_blocking().unwrap();
             assert_eq!(packet.sensor_id, "test_cam");

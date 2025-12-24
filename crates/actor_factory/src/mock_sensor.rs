@@ -1,7 +1,7 @@
-//! Mock 传感器实现
+//! Mock sensor implementation
 //!
-//! 实现 `SensorSource` trait，生成模拟传感器数据。
-//! 用于无 CARLA 环境时的测试和开发。
+//! Implements `SensorSource` trait, generates simulated sensor data.
+//! Used for testing and development without CARLA environment.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -15,16 +15,16 @@ use contracts::{
 };
 use tracing::{debug, trace};
 
-/// Mock 传感器配置
+/// Mock sensor configuration
 #[derive(Debug, Clone)]
 pub struct MockSensorConfig {
-    /// 发送频率 (Hz)
+    /// Send frequency (Hz)
     pub frequency_hz: f64,
-    /// 图像宽度（仅 Camera）
+    /// Image width (Camera only)
     pub image_width: u32,
-    /// 图像高度（仅 Camera）
+    /// Image height (Camera only)
     pub image_height: u32,
-    /// LiDAR 点数（仅 Lidar）
+    /// LiDAR point count (Lidar only)
     pub lidar_points: u32,
 }
 
@@ -39,10 +39,10 @@ impl Default for MockSensorConfig {
     }
 }
 
-/// Mock 传感器
+/// Mock sensor
 ///
-/// 实现 `SensorSource` trait，在后台线程中按指定频率生成模拟数据。
-/// 数据通过回调函数发送，与真实 CARLA 传感器的行为一致。
+/// Implements `SensorSource` trait, generates simulated data at specified frequency in background thread.
+/// Data is sent through callback function, consistent with real CARLA sensor behavior.
 pub struct MockSensor {
     sensor_id: String,
     sensor_type: SensorType,
@@ -51,7 +51,7 @@ pub struct MockSensor {
 }
 
 impl MockSensor {
-    /// 创建新的 Mock 传感器
+    /// Create new Mock sensor
     pub fn new(sensor_id: String, sensor_type: SensorType, config: MockSensorConfig) -> Self {
         Self {
             sensor_id,
@@ -61,12 +61,12 @@ impl MockSensor {
         }
     }
 
-    /// 使用默认配置创建 Mock 传感器
+    /// Create Mock sensor with default configuration
     pub fn with_defaults(sensor_id: String, sensor_type: SensorType) -> Self {
         Self::new(sensor_id, sensor_type, MockSensorConfig::default())
     }
 
-    /// 生成模拟数据载荷
+    /// Generate simulated data payload
     fn generate_payload(
         config: &MockSensorConfig,
         sensor_type: SensorType,
@@ -122,7 +122,7 @@ impl SensorSource for MockSensor {
     }
 
     fn listen(&self, callback: SensorDataCallback) {
-        // 幂等：如果已经在监听，不重复启动
+        // Idempotent: if already listening, don't start again
         if self.listening.swap(true, Ordering::SeqCst) {
             return;
         }
@@ -212,7 +212,7 @@ mod tests {
             count_clone.fetch_add(1, Ordering::Relaxed);
         }));
 
-        // 等待几个数据包
+        // Wait for a few packets
         thread::sleep(Duration::from_millis(50));
         sensor.stop();
 
@@ -248,12 +248,12 @@ mod tests {
         let count1 = count.clone();
         let count2 = count.clone();
 
-        // 第一次调用
+        // First call
         sensor.listen(Arc::new(move |_| {
             count1.fetch_add(1, Ordering::Relaxed);
         }));
 
-        // 第二次调用应该被忽略
+        // Second call should be ignored
         sensor.listen(Arc::new(move |_| {
             count2.fetch_add(100, Ordering::Relaxed);
         }));
@@ -261,9 +261,9 @@ mod tests {
         thread::sleep(Duration::from_millis(100));
         sensor.stop();
 
-        // 应该只有来自第一个回调的计数
+        // Should only have count from first callback
         let final_count = count.load(Ordering::Relaxed);
         assert!(final_count > 0);
-        assert!(final_count < 50); // 100ms 最多约 20 个包（默认 20Hz）
+        assert!(final_count < 50); // 100ms max ~20 packets (default 20Hz)
     }
 }

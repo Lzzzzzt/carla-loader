@@ -1,14 +1,14 @@
 //! # Ingestion Pipeline
 //!
-//! 传感器数据摄取模块。
+//! Sensor data ingestion module.
 //!
-//! 负责：
-//! - 注册传感器数据源（支持 Mock 和 Real）
-//! - 解析传感器数据为 `SensorPacket`
-//! - 背压管理与丢包策略
-//! - 通过 async-channel 发送给下游
+//! Responsibilities:
+//! - Register sensor data sources (supports Mock and Real)
+//! - Parse sensor data into `SensorPacket`
+//! - Backpressure management and drop policy
+//! - Send to downstream via async-channel
 //!
-//! ## 使用示例（统一接口）
+//! ## Usage Example (Unified Interface)
 //!
 //! ```ignore
 //! use ingestion::{IngestionPipeline, BackpressureConfig};
@@ -16,7 +16,7 @@
 //!
 //! let mut pipeline = IngestionPipeline::new(100);
 //!
-//! // 使用统一的 SensorSource 接口
+//! // Use unified SensorSource interface
 //! let sensor_source: Box<dyn SensorSource> = client.get_sensor_source(
 //!     actor_id, sensor_id, sensor_type,
 //! );
@@ -25,11 +25,11 @@
 //! pipeline.start_all();
 //! let rx = pipeline.take_receiver().unwrap();
 //! while let Some(packet) = rx.recv().await {
-//!     // 处理数据包
+//!     // Process data packet
 //! }
 //! ```
 //!
-//! ## Mock 测试
+//! ## Mock Testing
 //!
 //! ```ignore
 //! use ingestion::MockSensorSource;

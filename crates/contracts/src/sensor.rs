@@ -1,72 +1,72 @@
-//! SensorPacket - Ingestion 输出
+//! SensorPacket - Ingestion output
 //!
-//! 原始传感器数据包结构。
+//! Raw sensor data packet structure.
 
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 
 use crate::{SensorId, SensorType};
 
-/// 传感器数据包
+/// Sensor data packet
 ///
-/// 从 CARLA 传感器回调接收的原始数据。
+/// Raw data received from CARLA sensor callbacks.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SensorPacket {
-    /// 传感器 ID (cheap clone via Arc<str>)
+    /// Sensor ID (cheap clone via Arc<str>)
     pub sensor_id: SensorId,
 
-    /// 传感器类型
+    /// Sensor type
     pub sensor_type: SensorType,
 
-    /// CARLA 仿真时间戳 (seconds, f64) - 主时钟
+    /// CARLA simulation timestamp (seconds, f64) - primary clock
     pub timestamp: f64,
 
-    /// 可选的帧序号 (用于排序/诊断)
+    /// Optional frame sequence number (used for ordering/diagnostics)
     pub frame_id: Option<u64>,
 
-    /// 数据载荷 (零拷贝)
+    /// Data payload (zero-copy)
     pub payload: SensorPayload,
 }
 
-/// 传感器数据载荷
+/// Sensor data payload
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SensorPayload {
-    /// 图像数据 (RGB/Depth/SemanticSeg)
+    /// Image data (RGB/Depth/SemanticSeg)
     Image(ImageData),
 
-    /// LiDAR 点云
+    /// LiDAR point cloud
     PointCloud(PointCloudData),
 
-    /// IMU 数据
+    /// IMU data
     Imu(ImuData),
 
-    /// GNSS 数据
+    /// GNSS data
     Gnss(GnssData),
 
-    /// Radar 数据
+    /// Radar data
     Radar(RadarData),
 
-    /// 原始字节 (fallback)
+    /// Raw bytes (fallback)
     Raw(Bytes),
 }
 
-/// 图像数据
+/// Image data
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ImageData {
-    /// 图像宽度
+    /// Image width
     pub width: u32,
 
-    /// 图像高度
+    /// Image height
     pub height: u32,
 
-    /// 像素格式
+    /// Pixel format
     pub format: ImageFormat,
 
-    /// 原始像素数据
+    /// Raw pixel data
     pub data: Bytes,
 }
 
-/// 图像格式
+/// Image format
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ImageFormat {
@@ -77,56 +77,56 @@ pub enum ImageFormat {
     SemanticSeg,
 }
 
-/// LiDAR 点云数据
+/// LiDAR point cloud data
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PointCloudData {
-    /// 点数量
+    /// Number of points
     pub num_points: u32,
 
-    /// 每点字节数 (通常 16: x,y,z,intensity)
+    /// Bytes per point (typically 16: x,y,z,intensity)
     pub point_stride: u32,
 
-    /// 点云数据
+    /// Point cloud data
     pub data: Bytes,
 }
 
-/// IMU 数据
+/// IMU data
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct ImuData {
-    /// 加速度计 (m/s²)
+    /// Accelerometer (m/s²)
     pub accelerometer: Vector3,
 
-    /// 陀螺仪 (rad/s)
+    /// Gyroscope (rad/s)
     pub gyroscope: Vector3,
 
-    /// 指南针 (rad)
+    /// Compass (rad)
     pub compass: f64,
 }
 
-/// GNSS 数据
+/// GNSS data
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct GnssData {
-    /// 纬度 (度)
+    /// Latitude (degrees)
     pub latitude: f64,
 
-    /// 经度 (度)
+    /// Longitude (degrees)
     pub longitude: f64,
 
-    /// 高度 (米)
+    /// Altitude (meters)
     pub altitude: f64,
 }
 
-/// Radar 数据
+/// Radar data
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RadarData {
-    /// 检测点数量
+    /// Number of detections
     pub num_detections: u32,
 
-    /// 检测数据
+    /// Detection data
     pub data: Bytes,
 }
 
-/// 3D 向量
+/// 3D vector
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 pub struct Vector3 {
     pub x: f64,

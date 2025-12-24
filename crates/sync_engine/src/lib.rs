@@ -1,14 +1,14 @@
 //! # Sync Engine
 //!
-//! 多传感器数据同步引擎（以 PDF 规格为准）。
+//! Multi-sensor data synchronization engine (per PDF specification).
 //!
-//! 负责：
-//! - 事件驱动同步触发
-//! - IMU 自适应窗口
-//! - KF/AdaKF 时间偏移校正
-//! - 输出 `SyncedFrame`
+//! Responsibilities:
+//! - Event-driven sync triggering
+//! - IMU adaptive windowing
+//! - KF/AdaKF time offset correction
+//! - Output `SyncedFrame`
 //!
-//! ## 使用示例
+//! ## Usage Example
 //!
 //! ```ignore
 //! use sync_engine::{SyncEngine, SyncEngineConfig};

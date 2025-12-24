@@ -1,20 +1,20 @@
-//! Actor Factory 错误类型
+//! Actor Factory error types
 
 use contracts::ContractError;
 use thiserror::Error;
 
-/// Actor Factory 专用错误
+/// Actor Factory specific error
 #[derive(Debug, Error)]
 pub enum ActorFactoryError {
-    /// CARLA 连接错误
+    /// CARLA connection error
     #[error("failed to connect to CARLA: {message}")]
     ConnectionFailed { message: String },
 
-    /// Vehicle spawn 错误
+    /// Vehicle spawn error
     #[error("failed to spawn vehicle '{vehicle_id}': {message}")]
     VehicleSpawnFailed { vehicle_id: String, message: String },
 
-    /// Sensor spawn 错误
+    /// Sensor spawn error
     #[error("failed to spawn sensor '{sensor_id}' on vehicle '{vehicle_id}': {message}")]
     SensorSpawnFailed {
         sensor_id: String,
@@ -22,7 +22,7 @@ pub enum ActorFactoryError {
         message: String,
     },
 
-    /// Attach 错误
+    /// Attach error
     #[error("failed to attach sensor '{sensor_id}' to vehicle '{vehicle_id}': {message}")]
     AttachFailed {
         sensor_id: String,
@@ -30,17 +30,17 @@ pub enum ActorFactoryError {
         message: String,
     },
 
-    /// Destroy 错误
+    /// Destroy error
     #[error("failed to destroy actor {actor_id}: {message}")]
     DestroyFailed { actor_id: u32, message: String },
 
-    /// 包装的 ContractError
+    /// Wrapped ContractError
     #[error(transparent)]
     Contract(#[from] ContractError),
 }
 
 impl ActorFactoryError {
-    /// 创建 vehicle spawn 错误
+    /// Create vehicle spawn error
     pub fn vehicle_spawn(vehicle_id: impl Into<String>, message: impl Into<String>) -> Self {
         Self::VehicleSpawnFailed {
             vehicle_id: vehicle_id.into(),
@@ -48,7 +48,7 @@ impl ActorFactoryError {
         }
     }
 
-    /// 创建 sensor spawn 错误
+    /// Create sensor spawn error
     pub fn sensor_spawn(
         sensor_id: impl Into<String>,
         vehicle_id: impl Into<String>,
@@ -62,5 +62,5 @@ impl ActorFactoryError {
     }
 }
 
-/// Result 别名
+/// Result alias
 pub type Result<T> = std::result::Result<T, ActorFactoryError>;

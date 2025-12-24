@@ -1,6 +1,6 @@
-//! 真实 CARLA 客户端实现
+//! Real CARLA client implementation
 //!
-//! 使用 carla-rust crate 连接 CARLA 服务器。
+//! Connects to CARLA server using carla-rust crate.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -14,21 +14,21 @@ use crate::carla_sensor_source::CarlaSensorSource;
 use crate::client::CarlaClient;
 use crate::error::{ActorFactoryError, Result};
 
-/// 真实 CARLA 客户端
+/// Real CARLA client
 ///
-/// 封装 carla-rust 的 Client，实现 CarlaClient trait。
-/// 使用 Mutex 实现 interior mutability，允许 `&self` 方法修改 World。
+/// Wraps carla-rust's Client, implements CarlaClient trait.
+/// Uses Mutex for interior mutability, allowing `&self` methods to modify World.
 #[derive(Default, Clone)]
 pub struct RealCarlaClient {
-    /// CARLA 客户端
+    /// CARLA client
     client: Arc<Mutex<Option<Client>>>,
-    /// World 引用（使用 Mutex 实现 interior mutability）
+    /// World reference (uses Mutex for interior mutability)
     world: Arc<Mutex<Option<World>>>,
-    /// 已创建的 actor 列表（用于 teardown）
+    /// Created actors list (for teardown)
     actors: Arc<Mutex<HashMap<ActorId, ActorType>>>,
 }
 
-/// Actor 类型枚举
+/// Actor type enumeration
 #[derive(Clone)]
 enum ActorType {
     Vehicle(Vehicle),
@@ -36,7 +36,7 @@ enum ActorType {
 }
 
 impl RealCarlaClient {
-    /// 创建新的客户端（未连接状态）
+    /// Create new client (disconnected state)
     pub fn new() -> Self {
         Self {
             client: Arc::new(Mutex::new(None)),
@@ -45,7 +45,7 @@ impl RealCarlaClient {
         }
     }
 
-    /// 以 MUT 引用访问 World，确保已连接
+    /// Access World with mutable reference, ensuring connected
     fn with_world_mut<R, F>(&self, f: F) -> Result<R>
     where
         F: FnOnce(&mut World) -> Result<R>,
@@ -59,7 +59,7 @@ impl RealCarlaClient {
         f(world)
     }
 
-    /// 将 actor 保存到 registry，便于 teardown
+    /// Save actor to registry for teardown
     fn store_actor(&self, actor_id: ActorId, actor: ActorType) {
         self.actors.lock().unwrap().insert(actor_id, actor);
     }
@@ -182,7 +182,7 @@ impl RealCarlaClient {
         }
     }
 
-    /// 转换内部 Transform 到 CARLA Transform
+    /// Convert internal Transform to CARLA Transform
     fn to_carla_transform(transform: Option<Transform>) -> Option<CarlaTransform> {
         let transform = transform?;
 
@@ -199,9 +199,9 @@ impl RealCarlaClient {
         Some(CarlaTransform { location, rotation })
     }
 
-    /// 获取底层的 CARLA Sensor 对象
+    /// Get underlying CARLA Sensor object
     ///
-    /// 用于将 Sensor 传递给 IngestionPipeline
+    /// Used to pass Sensor to IngestionPipeline
     pub fn get_sensor(&self, actor_id: ActorId) -> Option<Sensor> {
         let actors = self.actors.lock().unwrap();
         match actors.get(&actor_id) {
@@ -297,7 +297,7 @@ impl CarlaClient for RealCarlaClient {
             debug!(actor_id, "actor destroyed");
         }
 
-        // 幂等：即使不存在也返回 Ok
+        // Idempotent: return Ok even if not exists
         Ok(())
     }
 
@@ -323,8 +323,8 @@ impl CarlaClient for RealCarlaClient {
 
 #[cfg(test)]
 mod tests {
-    // 真实客户端测试需要 CARLA 服务器运行
-    // 这些测试被标记为 ignore，仅在有服务器时运行
+    // Real client tests require CARLA server running
+    // These tests are marked as ignore, only run when server is available
 
     use super::*;
 

@@ -1,17 +1,17 @@
 //! # Integration Tests
 //!
-//! 集成测试与端到端测试。
+//! Integration tests and end-to-end tests.
 //!
-//! 负责：
-//! - 合约快照测试
-//! - 模拟 e2e 测试（无需 CARLA）
-//! - 性能回归基线
+//! Responsibilities:
+//! - Contract snapshot tests
+//! - Simulated e2e tests (no CARLA required)
+//! - Performance regression baselines
 
 #[cfg(test)]
 mod contract_tests {
     #[test]
     fn test_contracts_compile() {
-        // 验证 contracts crate 可编译
+        // Verify contracts crate can compile
         let _ = contracts::ConfigVersion::V1;
     }
 }
@@ -30,10 +30,10 @@ mod e2e_tests {
 
     /// End-to-end test: MockSensorSource -> SyncEngine -> Dispatcher
     ///
-    /// 验证完整的数据流：
-    /// 1. MockSensorSource 生成传感器数据
-    /// 2. SyncEngine 同步多传感器帧
-    /// 3. Dispatcher 将 SyncedFrame 分发到 sinks
+    /// Verifies complete data flow:
+    /// 1. MockSensorSource generates sensor data
+    /// 2. SyncEngine synchronizes multi-sensor frames
+    /// 3. Dispatcher distributes SyncedFrame to sinks
     #[tokio::test]
     async fn test_e2e_mock_pipeline() {
         // Setup: Create mock sensor sources

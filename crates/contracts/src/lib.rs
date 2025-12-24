@@ -1,11 +1,11 @@
 //! # Contracts
 //!
-//! 冻结的接口契约 (ICD)，定义模块间数据结构与 trait。
-//! 所有业务 crate 只能依赖此 crate，禁止互相反向依赖。
+//! Frozen interface contracts (ICD), defining inter-module data structures and traits.
+//! All business crates can only depend on this crate, reverse dependencies are prohibited.
 //!
-//! ## 时间模型
-//! - 以 CARLA simulation timestamp (seconds, f64) 为主时钟
-//! - `frame_id` 可选，用于排序/诊断
+//! ## Time Model
+//! - Uses CARLA simulation timestamp (seconds, f64) as primary clock
+//! - `frame_id` is optional, used for ordering/diagnostics
 
 mod blueprint;
 mod error;

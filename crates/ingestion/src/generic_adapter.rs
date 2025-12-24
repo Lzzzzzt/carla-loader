@@ -1,7 +1,7 @@
-//! 通用传感器适配器
+//! Generic sensor adapter
 //!
-//! 基于 `SensorSource` trait 的统一适配器实现。
-//! 允许 IngestionPipeline 以统一方式处理 Mock 和 Real 传感器。
+//! Unified adapter implementation based on `SensorSource` trait.
+//! Allows IngestionPipeline to handle Mock and Real sensors uniformly.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -14,10 +14,10 @@ use crate::adapter::SensorAdapter;
 use crate::adapters::common::send_packet;
 use crate::config::{BackpressureConfig, IngestionMetrics};
 
-/// 通用传感器适配器
+/// Generic sensor adapter
 ///
-/// 将 `SensorSource` trait 适配为 `SensorAdapter`。
-/// 这是连接 actor_factory 和 ingestion 的桥梁。
+/// Adapts `SensorSource` trait to `SensorAdapter`.
+/// This is the bridge connecting actor_factory and ingestion.
 pub struct GenericSensorAdapter {
     sensor_id: String,
     source: Box<dyn SensorSource>,
@@ -26,7 +26,7 @@ pub struct GenericSensorAdapter {
 }
 
 impl GenericSensorAdapter {
-    /// 创建新的通用适配器
+    /// Create new generic adapter
     pub fn new(
         sensor_id: String,
         source: Box<dyn SensorSource>,

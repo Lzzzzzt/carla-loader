@@ -1,20 +1,20 @@
-//! 配置解析模块
+//! Configuration parsing module
 //!
-//! 支持 TOML (主要) 和 JSON (可选) 格式。
+//! Supports TOML (primary) and JSON (optional) formats.
 
 use contracts::{ContractError, WorldBlueprint};
 
-/// 配置文件格式
+/// Configuration file format
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConfigFormat {
-    /// TOML 格式 (推荐)
+    /// TOML format (recommended)
     Toml,
-    /// JSON 格式
+    /// JSON format
     Json,
 }
 
 impl ConfigFormat {
-    /// 从文件扩展名推断格式
+    /// Infer format from file extension
     pub fn from_extension(ext: &str) -> Option<Self> {
         match ext.to_lowercase().as_str() {
             "toml" => Some(Self::Toml),
@@ -24,7 +24,7 @@ impl ConfigFormat {
     }
 }
 
-/// 解析 TOML 格式配置
+/// Parse TOML format configuration
 pub fn parse_toml(content: &str) -> Result<WorldBlueprint, ContractError> {
     toml::from_str(content).map_err(|e| ContractError::ConfigParse {
         message: format!("TOML parse error: {e}"),
@@ -32,7 +32,7 @@ pub fn parse_toml(content: &str) -> Result<WorldBlueprint, ContractError> {
     })
 }
 
-/// 解析 JSON 格式配置
+/// Parse JSON format configuration
 pub fn parse_json(content: &str) -> Result<WorldBlueprint, ContractError> {
     serde_json::from_str(content).map_err(|e| ContractError::ConfigParse {
         message: format!("JSON parse error: {e}"),
@@ -40,7 +40,7 @@ pub fn parse_json(content: &str) -> Result<WorldBlueprint, ContractError> {
     })
 }
 
-/// 根据格式解析配置
+/// Parse configuration based on format
 pub fn parse(content: &str, format: ConfigFormat) -> Result<WorldBlueprint, ContractError> {
     match format {
         ConfigFormat::Toml => parse_toml(content),

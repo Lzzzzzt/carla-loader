@@ -1,7 +1,7 @@
-//! CARLA Sensor 的 SensorSource wrapper
+//! CARLA Sensor SensorSource wrapper
 //!
-//! 将 CARLA 原生 Sensor 包装为实现 `SensorSource` trait 的类型。
-//! 仅在 `real-carla` feature 启用时编译。
+//! Wraps CARLA native Sensor as a type implementing `SensorSource` trait.
+//! Only compiled when `real-carla` feature is enabled.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -14,8 +14,8 @@ use crate::sensor_data_converter::convert_sensor_data;
 
 /// CARLA Sensor wrapper
 ///
-/// 将 CARLA 原生 `Sensor` 包装为 `SensorSource`，
-/// 允许 IngestionPipeline 以统一方式处理真实传感器和 Mock 传感器。
+/// Wraps CARLA native `Sensor` as `SensorSource`,
+/// allowing IngestionPipeline to handle real sensors and Mock sensors uniformly.
 pub struct CarlaSensorSource {
     sensor_id: String,
     sensor_type: SensorType,
@@ -24,7 +24,7 @@ pub struct CarlaSensorSource {
 }
 
 impl CarlaSensorSource {
-    /// 创建新的 CARLA 传感器源
+    /// Create new CARLA sensor source
     pub fn new(sensor_id: String, sensor_type: SensorType, sensor: Sensor) -> Self {
         Self {
             sensor_id,
@@ -45,7 +45,7 @@ impl SensorSource for CarlaSensorSource {
     }
 
     fn listen(&self, callback: SensorDataCallback) {
-        // 幂等：如果已经在监听，不重复注册
+        // Idempotent: if already listening, don't register again
         if self.listening.swap(true, Ordering::SeqCst) {
             warn!(sensor_id = %self.sensor_id, "sensor already listening");
             return;

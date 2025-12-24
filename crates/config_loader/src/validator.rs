@@ -1,30 +1,30 @@
-//! 配置校验模块
+//! Configuration validation module
 //!
-//! 使用 `validator` crate 进行结构化验证，同时保留自定义校验规则。
+//! Uses the `validator` crate for structured validation while retaining custom validation rules.
 //!
-//! 校验规则：
-//! - sensor_id 唯一
-//! - vehicle_id 唯一
-//! - 传感器挂载拓扑合法 (primary_sensor_id 存在)
-//! - frequency_hz > 0 (由 validator derive 处理)
-//! - min_window_sec <= max_window_sec (由 validator schema 处理)
-//! - sink 必填字段齐全 (由 validator derive 处理)
+//! Validation rules:
+//! - sensor_id must be unique
+//! - vehicle_id must be unique
+//! - Sensor mount topology must be valid (primary_sensor_id must exist)
+//! - frequency_hz > 0 (handled by validator derive)
+//! - min_window_sec <= max_window_sec (handled by validator schema)
+//! - sink required fields must be present (handled by validator derive)
 
 use std::collections::HashSet;
 
 use contracts::{ContractError, WorldBlueprint};
 use validator::Validate;
 
-/// 校验 WorldBlueprint 配置
+/// Validate WorldBlueprint configuration
 ///
-/// 先运行结构化 validator 校验，再执行自定义校验。
+/// First runs structured validator checks, then executes custom validation.
 pub fn validate(blueprint: &WorldBlueprint) -> Result<(), ContractError> {
-    // 1. 运行 validator derive 定义的规则
+    // 1. Run validator derive defined rules
     blueprint
         .validate()
         .map_err(|e| ContractError::config_validation("validation", format!("{}", e)))?;
 
-    // 2. 执行自定义校验（ID 唯一性、引用完整性）
+    // 2. Execute custom validation (ID uniqueness, reference integrity)
     validate_unique_vehicle_ids(blueprint)?;
     validate_unique_sensor_ids(blueprint)?;
     validate_primary_sensor_exists(blueprint)?;
@@ -32,7 +32,7 @@ pub fn validate(blueprint: &WorldBlueprint) -> Result<(), ContractError> {
     Ok(())
 }
 
-/// 校验 vehicle_id 唯一性
+/// Validate vehicle_id uniqueness
 fn validate_unique_vehicle_ids(blueprint: &WorldBlueprint) -> Result<(), ContractError> {
     let mut seen = HashSet::with_capacity(blueprint.vehicles.len());
     for vehicle in &blueprint.vehicles {
@@ -46,7 +46,7 @@ fn validate_unique_vehicle_ids(blueprint: &WorldBlueprint) -> Result<(), Contrac
     Ok(())
 }
 
-/// 校验 sensor_id 唯一性 (全局)
+/// Validate sensor_id uniqueness (global)
 fn validate_unique_sensor_ids(blueprint: &WorldBlueprint) -> Result<(), ContractError> {
     let total_sensors: usize = blueprint.vehicles.iter().map(|v| v.sensors.len()).sum();
     let mut seen = HashSet::with_capacity(total_sensors);
@@ -64,7 +64,7 @@ fn validate_unique_sensor_ids(blueprint: &WorldBlueprint) -> Result<(), Contract
     Ok(())
 }
 
-/// 校验 primary_sensor_id 存在
+/// Validate primary_sensor_id exists
 fn validate_primary_sensor_exists(blueprint: &WorldBlueprint) -> Result<(), ContractError> {
     let all_sensor_ids: HashSet<_> = blueprint
         .vehicles

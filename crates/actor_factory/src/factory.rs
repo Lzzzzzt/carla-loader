@@ -1,6 +1,6 @@
-//! ActorFactory 核心实现
+//! ActorFactory core implementation
 //!
-//! 从 WorldBlueprint spawn actors，管理生命周期。
+//! Spawns actors from WorldBlueprint, manages lifecycle.
 
 use contracts::{ActorId, RuntimeGraph, SensorConfig, SensorType, VehicleConfig, WorldBlueprint};
 use tracing::{error, info, instrument, warn};
@@ -10,22 +10,22 @@ use crate::error::{ActorFactoryError, Result};
 
 /// Actor Factory
 ///
-/// 负责从 WorldBlueprint spawn vehicles 和 sensors，
-/// 并提供 teardown 和回滚能力。
+/// Responsible for spawning vehicles and sensors from WorldBlueprint,
+/// and providing teardown and rollback capabilities.
 pub struct ActorFactory<C: CarlaClient> {
     client: C,
 }
 
 impl<C: CarlaClient> ActorFactory<C> {
-    /// 创建新的 ActorFactory
+    /// Create new ActorFactory
     pub fn new(client: C) -> Self {
         Self { client }
     }
 
-    /// 从 WorldBlueprint spawn 所有 actors
+    /// Spawn all actors from WorldBlueprint
     ///
-    /// # 原子性保证
-    /// 如果任何 spawn 失败，会回滚销毁所有已创建的 actors。
+    /// # Atomicity Guarantee
+    /// If any spawn fails, all created actors will be rolled back and destroyed.
     #[instrument(
         name = "actor_factory_spawn_blueprint",
         skip(self, blueprint),
@@ -46,7 +46,7 @@ impl<C: CarlaClient> ActorFactory<C> {
                     created_sensors.extend(sensor_ids);
                 }
                 Err(e) => {
-                    // 回滚所有已创建的 actors
+                    // Rollback all created actors
                     warn!(
                         error = %e,
                         vehicle_id = %vehicle_config.id,
@@ -67,7 +67,7 @@ impl<C: CarlaClient> ActorFactory<C> {
         Ok(graph)
     }
 
-    /// Spawn 单个车辆及其所有传感器
+    /// Spawn single vehicle and all its sensors
     #[instrument(
         name = "actor_factory_spawn_vehicle_with_sensors",
         skip(self, config, graph),
@@ -104,7 +104,7 @@ impl<C: CarlaClient> ActorFactory<C> {
                     );
                 }
                 Err(e) => {
-                    // 回滚该 vehicle 的所有 sensors
+                    // Rollback all sensors of this vehicle
                     warn!(
                         sensor_id = %sensor_config.id,
                         vehicle_id = %config.id,
@@ -125,10 +125,10 @@ impl<C: CarlaClient> ActorFactory<C> {
         Ok((vehicle_actor_id, sensor_ids))
     }
 
-    /// 销毁 RuntimeGraph 中的所有 actors
+    /// Destroy all actors in RuntimeGraph
     ///
-    /// # 幂等性
-    /// 多次调用安全，不存在的 actor 会被忽略。
+    /// # Idempotency
+    /// Multiple calls are safe, non-existent actors will be ignored.
     #[instrument(
         name = "actor_factory_teardown",
         skip(self, graph),
@@ -137,12 +137,12 @@ impl<C: CarlaClient> ActorFactory<C> {
     pub async fn teardown(&self, graph: &RuntimeGraph) -> Result<()> {
         info!("starting teardown");
 
-        // 先销毁 sensors
+        // Destroy sensors first
         for (sensor_id, actor_id) in &graph.sensors {
             self.destroy_actor_safe(*actor_id, sensor_id).await;
         }
 
-        // 再销毁 vehicles
+        // Then destroy vehicles
         for (vehicle_id, actor_id) in &graph.vehicles {
             self.destroy_actor_safe(*actor_id, vehicle_id).await;
         }
@@ -151,7 +151,7 @@ impl<C: CarlaClient> ActorFactory<C> {
         Ok(())
     }
 
-    /// 回滚：销毁所有已创建的 actors
+    /// Rollback: destroy all created actors
     #[instrument(
         name = "actor_factory_rollback",
         skip(self, sensors, vehicles),
@@ -160,18 +160,18 @@ impl<C: CarlaClient> ActorFactory<C> {
     async fn rollback(&self, sensors: &[(String, ActorId)], vehicles: &[(String, ActorId)]) {
         warn!("performing rollback");
 
-        // 先销毁 sensors
+        // Destroy sensors first
         for (sensor_id, actor_id) in sensors {
             self.destroy_actor_safe(*actor_id, sensor_id).await;
         }
 
-        // 再销毁 vehicles
+        // Then destroy vehicles
         for (vehicle_id, actor_id) in vehicles {
             self.destroy_actor_safe(*actor_id, vehicle_id).await;
         }
     }
 
-    /// 安全销毁 actor（忽略错误，仅记录日志）
+    /// Safely destroy actor (ignore errors, log only)
     #[instrument(
         name = "actor_factory_destroy_actor",
         skip(self, config_id),
@@ -243,7 +243,7 @@ impl<C: CarlaClient> ActorFactory<C> {
     }
 }
 
-/// 传感器类型转 CARLA 蓝图名称
+/// Convert sensor type to CARLA blueprint name
 fn sensor_type_to_blueprint(sensor_type: SensorType) -> String {
     match sensor_type {
         SensorType::Camera => "sensor.camera.rgb".to_string(),
@@ -369,13 +369,13 @@ mod tests {
         let factory = ActorFactory::new(client);
         let blueprint = create_test_blueprint();
 
-        // 设置当前 spawn ID 以触发失败
-        // Note: 这里需要修改 ActorFactory 来设置 current_spawn_id
+        // Set current spawn ID to trigger failure
+        // Note: Need to modify ActorFactory to set current_spawn_id
 
         let result = factory.spawn_from_blueprint(&blueprint).await;
 
-        // 因为 mock 需要设置 current_spawn_id，这个测试需要额外逻辑
-        // 这里仅验证接口可用
+        // Since mock needs to set current_spawn_id, this test needs additional logic
+        // Here just verify interface is usable
         assert!(result.is_ok() || result.is_err());
     }
 

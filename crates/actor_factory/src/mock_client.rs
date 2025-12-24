@@ -1,6 +1,6 @@
-//! Mock CARLA 客户端
+//! Mock CARLA client
 //!
-//! 用于单元测试的 mock 实现，支持注入失败场景和回放模式。
+//! Mock implementation for unit testing, supports injecting failure scenarios and replay mode.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -14,44 +14,44 @@ use crate::error::{ActorFactoryError, Result};
 use crate::mock_sensor::{MockSensor, MockSensorConfig};
 use crate::replay_sensor::{ReplayConfig, ReplaySensor};
 
-/// Mock 客户端配置
+/// Mock client configuration
 #[derive(Debug, Default, Clone)]
 pub struct MockConfig {
-    /// 应该失败的 vehicle IDs
+    /// Vehicle IDs that should fail
     pub fail_vehicles: Vec<String>,
-    /// 应该失败的 sensor IDs
+    /// Sensor IDs that should fail
     pub fail_sensors: Vec<String>,
-    /// 应该失败的 destroy actor IDs
+    /// Destroy actor IDs that should fail
     pub fail_destroy: Vec<ActorId>,
-    /// Mock 传感器配置 (用于生成模式)
+    /// Mock sensor configuration (for generation mode)
     pub sensor_config: MockSensorConfig,
-    /// Replay 配置 (用于回放模式)
+    /// Replay configuration (for replay mode)
     pub replay_config: ReplayConfig,
 }
 
-/// Mock CARLA 客户端内部状态
+/// Mock CARLA client internal state
 struct MockCarlaClientInner {
-    /// 配置（可注入失败场景）
+    /// Configuration (can inject failure scenarios)
     config: MockConfig,
-    /// Actor ID 计数器
+    /// Actor ID counter
     next_actor_id: AtomicU32,
-    /// 已创建的 actors (actor_id -> (blueprint, sensor_type))
+    /// Created actors (actor_id -> (blueprint, sensor_type))
     actors: Mutex<HashMap<ActorId, ActorInfo>>,
-    /// 连接状态
+    /// Connection state
     connected: Mutex<bool>,
-    /// 当前正在 spawn 的 ID（用于条件失败）
+    /// Currently spawning ID (for conditional failure)
     current_spawn_id: Mutex<Option<String>>,
 }
 
-/// Mock CARLA 客户端
+/// Mock CARLA client
 ///
-/// 使用 Arc 包装内部状态，支持 Clone。
+/// Internal state wrapped in Arc, supports Clone.
 #[derive(Clone)]
 pub struct MockCarlaClient {
     inner: Arc<MockCarlaClientInner>,
 }
 
-/// Actor 信息
+/// Actor information
 #[derive(Clone)]
 #[allow(dead_code)] // Fields kept for debugging and potential future use
 struct ActorInfo {
@@ -60,17 +60,17 @@ struct ActorInfo {
 }
 
 impl MockCarlaClient {
-    /// 创建默认 mock 客户端
+    /// Create default mock client
     pub fn new() -> Self {
         Self::with_config(MockConfig::default())
     }
 
-    /// 使用配置创建 mock 客户端
+    /// Create mock client with configuration
     pub fn with_config(config: MockConfig) -> Self {
         Self {
             inner: Arc::new(MockCarlaClientInner {
                 config,
-                next_actor_id: AtomicU32::new(1000), // 从 1000 开始，便于识别
+                next_actor_id: AtomicU32::new(1000), // Start from 1000 for easy identification
                 actors: Mutex::new(HashMap::new()),
                 connected: Mutex::new(false),
                 current_spawn_id: Mutex::new(None),
@@ -78,17 +78,17 @@ impl MockCarlaClient {
         }
     }
 
-    /// 设置当前正在 spawn 的配置 ID
+    /// Set currently spawning configuration ID
     pub fn set_current_spawn_id(&self, id: Option<String>) {
         *self.inner.current_spawn_id.lock().unwrap() = id;
     }
 
-    /// 获取当前已创建的 actor 数量
+    /// Get current created actor count
     pub fn actor_count(&self) -> usize {
         self.inner.actors.lock().unwrap().len()
     }
 
-    /// 获取所有已创建的 actor IDs
+    /// Get all created actor IDs
     pub fn all_actor_ids(&self) -> Vec<ActorId> {
         self.inner.actors.lock().unwrap().keys().copied().collect()
     }
@@ -117,7 +117,7 @@ impl MockCarlaClient {
         }
     }
 
-    /// 从 blueprint 推断传感器类型
+    /// Infer sensor type from blueprint
     fn infer_sensor_type(blueprint: &str) -> Option<SensorType> {
         if blueprint.contains("camera") {
             Some(SensorType::Camera)
@@ -201,7 +201,7 @@ impl CarlaClient for MockCarlaClient {
     ) -> Result<ActorId> {
         self.ensure_connected()?;
 
-        // 验证 parent 存在
+        // Verify parent exists
         if !self.inner.actors.lock().unwrap().contains_key(&parent_id) {
             return Err(ActorFactoryError::SensorSpawnFailed {
                 sensor_id: "unknown".into(),
@@ -246,7 +246,7 @@ impl CarlaClient for MockCarlaClient {
             });
         }
 
-        // 幂等：即使不存在也返回 Ok
+        // Idempotent: return Ok even if not exists
         self.inner.actors.lock().unwrap().remove(&actor_id);
         Ok(())
     }
@@ -262,12 +262,12 @@ impl CarlaClient for MockCarlaClient {
         sensor_id: String,
         sensor_type: SensorType,
     ) -> Option<Box<dyn SensorSource>> {
-        // 验证 actor 存在
+        // Verify actor exists
         if !self.inner.actors.lock().unwrap().contains_key(&actor_id) {
             return None;
         }
 
-        // 如果配置了 replay_path，使用 ReplaySensor
+        // If replay_path is configured, use ReplaySensor
         if let Some(ref replay_path) = self.inner.config.replay_config.replay_path {
             info!(sensor_id = %sensor_id, path = %replay_path.display(), "Using ReplaySensor");
             match ReplaySensor::load(
@@ -283,7 +283,7 @@ impl CarlaClient for MockCarlaClient {
             }
         }
 
-        // 默认使用 MockSensor 生成模式
+        // Default to MockSensor generation mode
         Some(Box::new(MockSensor::new(
             sensor_id,
             sensor_type,

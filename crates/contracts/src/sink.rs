@@ -1,26 +1,26 @@
-//! DataSink trait - Dispatcher 输出端接口
+//! DataSink trait - Dispatcher output interface
 //!
-//! 定义 Sink 的抽象接口。
+//! Defines the abstract interface for Sinks.
 
 use crate::{ContractError, SyncedFrame};
 
-/// 数据输出端 trait
+/// Data output trait
 ///
-/// 所有 sink 实现必须实现此 trait。
+/// All sink implementations must implement this trait.
 #[trait_variant::make(DataSink: Send)]
 pub trait LocalDataSink {
-    /// Sink 名称 (用于日志/指标)
+    /// Sink name (used for logging/metrics)
     fn name(&self) -> &str;
 
-    /// 写入同步帧
+    /// Write synchronized frame
     ///
     /// # Errors
-    /// 返回写入错误 (需包含上下文)
+    /// Returns write error (should include context)
     async fn write(&mut self, frame: &SyncedFrame) -> Result<(), ContractError>;
 
-    /// 刷新缓冲区 (若有)
+    /// Flush buffer (if any)
     async fn flush(&mut self) -> Result<(), ContractError>;
 
-    /// 关闭 sink
+    /// Close sink
     async fn close(&mut self) -> Result<(), ContractError>;
 }

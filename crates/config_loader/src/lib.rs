@@ -1,11 +1,11 @@
 //! # Config Loader
 //!
-//! 配置加载与解析模块。
+//! Configuration loading and parsing module.
 //!
-//! 负责：
-//! - 解析 TOML/JSON 配置文件
-//! - 校验配置合法性
-//! - 生成 `WorldBlueprint`
+//! Responsibilities:
+//! - Parse TOML/JSON configuration files
+//! - Validate configuration legality
+//! - Generate `WorldBlueprint`
 //!
 //! # Example
 //!
@@ -26,32 +26,32 @@ pub use parser::ConfigFormat;
 use contracts::ContractError;
 use std::path::Path;
 
-/// 配置加载器
+/// Configuration loader
 ///
-/// 提供从文件或字符串加载配置的静态方法。
+/// Provides static methods to load configuration from files or strings.
 pub struct ConfigLoader;
 
 impl ConfigLoader {
-    /// 从文件路径加载配置
+    /// Load configuration from file path
     ///
-    /// 根据文件扩展名自动检测格式 (.toml / .json)。
+    /// Automatically detects format from file extension (.toml / .json).
     ///
     /// # Errors
-    /// - 文件读取失败
-    /// - 格式不支持
-    /// - 解析失败
-    /// - 校验失败
+    /// - File read failure
+    /// - Unsupported format
+    /// - Parse failure
+    /// - Validation failure
     pub fn load_from_path(path: &Path) -> Result<WorldBlueprint, ContractError> {
         let format = Self::detect_format(path)?;
         let content = Self::read_file(path)?;
         Self::load_from_str(&content, format)
     }
 
-    /// 从字符串加载配置
+    /// Load configuration from string
     ///
     /// # Errors
-    /// - 解析失败
-    /// - 校验失败
+    /// - Parse failure
+    /// - Validation failure
     pub fn load_from_str(
         content: &str,
         format: ConfigFormat,
@@ -59,13 +59,13 @@ impl ConfigLoader {
         Self::parse_and_validate(content, format)
     }
 
-    /// 将 WorldBlueprint 序列化为 TOML 字符串
+    /// Serialize WorldBlueprint to TOML string
     pub fn to_toml(blueprint: &WorldBlueprint) -> Result<String, ContractError> {
         toml::to_string_pretty(blueprint)
             .map_err(|e| ContractError::config_parse(format!("TOML serialize error: {e}")))
     }
 
-    /// 将 WorldBlueprint 序列化为 JSON 字符串
+    /// Serialize WorldBlueprint to JSON string
     pub fn to_json(blueprint: &WorldBlueprint) -> Result<String, ContractError> {
         serde_json::to_string_pretty(blueprint)
             .map_err(|e| ContractError::config_parse(format!("JSON serialize error: {e}")))
@@ -73,7 +73,7 @@ impl ConfigLoader {
 }
 
 impl ConfigLoader {
-    /// 根据文件扩展名推断配置格式
+    /// Infer configuration format from file extension
     fn detect_format(path: &Path) -> Result<ConfigFormat, ContractError> {
         let ext = path.extension().and_then(|e| e.to_str()).ok_or_else(|| {
             ContractError::config_parse("cannot determine file format from extension")
@@ -84,12 +84,12 @@ impl ConfigLoader {
         })
     }
 
-    /// 读取配置文件内容
+    /// Read configuration file content
     fn read_file(path: &Path) -> Result<String, ContractError> {
         Ok(std::fs::read_to_string(path)?)
     }
 
-    /// 解析并校验配置内容
+    /// Parse and validate configuration content
     fn parse_and_validate(
         content: &str,
         format: ConfigFormat,

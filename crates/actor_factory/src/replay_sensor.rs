@@ -1,7 +1,7 @@
-//! Replay Sensor - 从录制文件回放传感器数据
+//! Replay Sensor - Replay sensor data from recorded files
 //!
-//! 读取 Python 脚本录制的 JSONL + 二进制文件，
-//! 按原始时间戳回放传感器数据。
+//! Reads JSONL + binary files recorded by Python script,
+//! replays sensor data at original timestamps.
 
 use std::collections::HashMap;
 use std::fs::File;
@@ -20,20 +20,20 @@ use contracts::{
 use serde::Deserialize;
 use tracing::{debug, info, warn};
 
-/// Replay 配置
+/// Replay configuration
 #[derive(Debug, Clone, Default)]
 pub struct ReplayConfig {
-    /// 录制文件根目录
+    /// Recording file root directory
     pub replay_path: Option<PathBuf>,
 
-    /// 回放速度倍率 (1.0 = 原速)
+    /// Playback speed multiplier (1.0 = original speed)
     pub speed_multiplier: f64,
 
-    /// 是否循环回放
+    /// Whether to loop playback
     pub loop_playback: bool,
 }
 
-/// 录制会话 manifest
+/// Recording session manifest
 #[derive(Debug, Deserialize)]
 pub struct RecordingManifest {
     pub version: String,
@@ -43,14 +43,14 @@ pub struct RecordingManifest {
     pub sensors: HashMap<String, SensorMetadata>,
 }
 
-/// 传感器元数据
+/// Sensor metadata
 #[derive(Debug, Deserialize)]
 pub struct SensorMetadata {
     pub sensor_type: String,
     pub frame_count: u64,
 }
 
-/// JSONL 中的传感器记录
+/// Sensor record in JSONL
 #[derive(Debug, Deserialize)]
 struct SensorRecord {
     sensor_id: String,
@@ -58,7 +58,7 @@ struct SensorRecord {
     timestamp: f64,
     frame_id: u64,
 
-    // Camera 字段
+    // Camera fields
     #[serde(default)]
     data_file: Option<String>,
     #[serde(default)]
@@ -68,13 +68,13 @@ struct SensorRecord {
     #[serde(default)]
     format: Option<String>,
 
-    // LiDAR 字段
+    // LiDAR fields
     #[serde(default)]
     num_points: Option<u32>,
     #[serde(default)]
     point_stride: Option<u32>,
 
-    // IMU 字段
+    // IMU fields
     #[serde(default)]
     accelerometer: Option<[f64; 3]>,
     #[serde(default)]
@@ -82,7 +82,7 @@ struct SensorRecord {
     #[serde(default)]
     compass: Option<f64>,
 
-    // GNSS 字段
+    // GNSS fields
     #[serde(default)]
     latitude: Option<f64>,
     #[serde(default)]
@@ -90,12 +90,12 @@ struct SensorRecord {
     #[serde(default)]
     altitude: Option<f64>,
 
-    // Radar 字段
+    // Radar fields
     #[serde(default)]
     num_detections: Option<u32>,
 }
 
-/// Replay Sensor - 从录制文件回放传感器数据
+/// Replay Sensor - Replay sensor data from recorded files
 pub struct ReplaySensor {
     sensor_id: String,
     sensor_type: SensorType,
@@ -107,7 +107,7 @@ pub struct ReplaySensor {
 }
 
 impl ReplaySensor {
-    /// 从录制目录加载传感器
+    /// Load sensor from recording directory
     pub fn load(
         replay_path: &Path,
         sensor_id: String,
@@ -129,13 +129,13 @@ impl ReplaySensor {
             let record: SensorRecord = serde_json::from_str(&line)
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
 
-            // 只保留该传感器的记录
+            // Only keep records for this sensor
             if record.sensor_id == sensor_id {
                 records.push(record);
             }
         }
 
-        // 按时间戳排序
+        // Sort by timestamp
         records.sort_by(|a, b| a.timestamp.partial_cmp(&b.timestamp).unwrap());
 
         info!(
@@ -155,7 +155,7 @@ impl ReplaySensor {
         })
     }
 
-    /// 从记录构建 SensorPacket
+    /// Build SensorPacket from record
     fn build_packet(&self, record: &SensorRecord) -> Option<SensorPacket> {
         let payload = match self.sensor_type {
             SensorType::Camera => self.build_camera_payload(record)?,
@@ -286,7 +286,7 @@ impl SensorSource for ReplaySensor {
                         return;
                     }
 
-                    // 计算等待时间
+                    // Calculate wait time
                     let record_offset = record.timestamp - first_timestamp;
                     let target_elapsed = Duration::from_secs_f64(record_offset / speed);
                     let actual_elapsed = start_time.elapsed();
@@ -295,7 +295,7 @@ impl SensorSource for ReplaySensor {
                         thread::sleep(target_elapsed - actual_elapsed);
                     }
 
-                    // 构建并发送 packet
+                    // Build and send packet
                     let replay_sensor = ReplaySensor {
                         sensor_id: sensor_id.clone(),
                         sensor_type,
@@ -328,7 +328,7 @@ impl SensorSource for ReplaySensor {
     fn stop(&self) {
         self.listening.store(false, Ordering::SeqCst);
 
-        // 等待线程结束
+        // Wait for thread to finish
         if let Some(handle) = self.thread_handle.lock().unwrap().take() {
             let _ = handle.join();
         }
@@ -339,7 +339,7 @@ impl SensorSource for ReplaySensor {
     }
 }
 
-// 让 SensorRecord Clone 以便在线程中使用
+// Allow SensorRecord to Clone for use in threads
 impl Clone for SensorRecord {
     fn clone(&self) -> Self {
         Self {

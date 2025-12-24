@@ -1,17 +1,17 @@
 //! # Actor Factory
 //!
-//! CARLA 资产工厂模块。
+//! CARLA asset factory module.
 //!
-//! 负责：
-//! - 从 `WorldBlueprint` spawn vehicles 和 sensors
-//! - 管理 actor 生命周期
-//! - 提供 teardown 与回滚
-//! - 提供统一的 `SensorSource` 抽象
-//! - 支持 Mock 和 Replay 模式
+//! Responsibilities:
+//! - Spawn vehicles and sensors from `WorldBlueprint`
+//! - Manage actor lifecycle
+//! - Provide teardown and rollback
+//! - Provide unified `SensorSource` abstraction
+//! - Support Mock and Replay modes
 //!
 //! ## Feature Flags
 //!
-//! - `real-carla`: 启用真实 CARLA 客户端（需要 carla crate）
+//! - `real-carla`: Enable real CARLA client (requires carla crate)
 
 pub mod client;
 pub mod error;

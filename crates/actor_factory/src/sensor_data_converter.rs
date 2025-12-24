@@ -1,7 +1,7 @@
-//! CARLA 传感器数据转换
+//! CARLA sensor data conversion
 //!
-//! 将 CARLA 原生传感器数据转换为 `SensorPacket`。
-//! 仅在 `real-carla` feature 启用时编译。
+//! Converts CARLA native sensor data to `SensorPacket`.
+//! Only compiled when `real-carla` feature is enabled.
 
 use bytes::Bytes;
 use carla::sensor::data::{
@@ -13,10 +13,10 @@ use contracts::{
     SensorPayload, SensorType, Vector3,
 };
 
-/// 将 POD 切片转换为 bytes::Bytes
+/// Convert POD slice to bytes::Bytes
 ///
 /// # Safety
-/// 调用者必须确保 T 是 POD 类型
+/// Caller must ensure T is a POD type
 #[inline]
 unsafe fn pod_slice_to_bytes_unchecked<T>(slice: &[T]) -> Bytes {
     let ptr = slice.as_ptr() as *const u8;
@@ -24,7 +24,7 @@ unsafe fn pod_slice_to_bytes_unchecked<T>(slice: &[T]) -> Bytes {
     Bytes::copy_from_slice(std::slice::from_raw_parts(ptr, len))
 }
 
-/// 将 CARLA Image 转换为 SensorPayload
+/// Convert CARLA Image to SensorPayload
 fn image_to_payload(image: &Image) -> SensorPayload {
     let data = Bytes::copy_from_slice(image.as_raw_bytes());
     SensorPayload::Image(ImageData {
@@ -35,7 +35,7 @@ fn image_to_payload(image: &Image) -> SensorPayload {
     })
 }
 
-/// 将 CARLA LidarMeasurement 转换为 SensorPayload
+/// Convert CARLA LidarMeasurement to SensorPayload
 fn lidar_to_payload(lidar: &LidarMeasurement) -> SensorPayload {
     let points = lidar.as_slice();
     let data = unsafe { pod_slice_to_bytes_unchecked(points) };
@@ -46,7 +46,7 @@ fn lidar_to_payload(lidar: &LidarMeasurement) -> SensorPayload {
     })
 }
 
-/// 将 CARLA ImuMeasurement 转换为 SensorPayload
+/// Convert CARLA ImuMeasurement to SensorPayload
 fn imu_to_payload(imu: &ImuMeasurement) -> SensorPayload {
     let accel = imu.accelerometer();
     let gyro = imu.gyroscope();
@@ -65,7 +65,7 @@ fn imu_to_payload(imu: &ImuMeasurement) -> SensorPayload {
     })
 }
 
-/// 将 CARLA GnssMeasurement 转换为 SensorPayload
+/// Convert CARLA GnssMeasurement to SensorPayload
 fn gnss_to_payload(gnss: &GnssMeasurement) -> SensorPayload {
     SensorPayload::Gnss(GnssData {
         latitude: gnss.latitude(),
@@ -74,7 +74,7 @@ fn gnss_to_payload(gnss: &GnssMeasurement) -> SensorPayload {
     })
 }
 
-/// 将 CARLA RadarMeasurement 转换为 SensorPayload
+/// Convert CARLA RadarMeasurement to SensorPayload
 fn radar_to_payload(radar: &RadarMeasurement) -> SensorPayload {
     let detections = radar.as_slice();
     let data = unsafe { pod_slice_to_bytes_unchecked(detections) };
@@ -84,10 +84,10 @@ fn radar_to_payload(radar: &RadarMeasurement) -> SensorPayload {
     })
 }
 
-/// 将 CARLA 传感器数据转换为 SensorPacket
+/// Convert CARLA sensor data to SensorPacket
 ///
-/// 根据传感器类型自动选择合适的转换函数。
-/// 如果数据类型与传感器类型不匹配，返回 None。
+/// Automatically selects appropriate conversion function based on sensor type.
+/// Returns None if data type doesn't match sensor type.
 pub fn convert_sensor_data(
     sensor_id: &str,
     sensor_type: SensorType,

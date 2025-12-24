@@ -1,4 +1,4 @@
-//! GNSS 传感器适配器
+//! GNSS sensor adapter
 
 #[cfg(feature = "real-carla")]
 use contracts::{GnssData, SensorPayload};
@@ -6,7 +6,7 @@ use contracts::{GnssData, SensorPayload};
 #[cfg(feature = "real-carla")]
 use carla::sensor::data::GnssMeasurement;
 
-/// 将 GNSS 测量转换为 SensorPayload
+/// Convert GNSS measurement to SensorPayload
 #[cfg(feature = "real-carla")]
 #[inline]
 fn gnss_to_payload(gnss: &GnssMeasurement) -> SensorPayload {

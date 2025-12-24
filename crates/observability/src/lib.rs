@@ -1,22 +1,22 @@
 //! # Observability
 //!
-//! 可观测性模块：Tracing + Prometheus 指标。
+//! Observability module: Tracing + Prometheus metrics.
 //!
-//! ## 功能
+//! ## Features
 //!
-//! - Tracing 初始化 (JSON/Pretty 格式)
-//! - Prometheus 指标导出
-//! - SyncMeta 指标收集与统计
+//! - Tracing initialization (JSON/Pretty format)
+//! - Prometheus metrics export
+//! - SyncMeta metrics collection and statistics
 //!
-//! ## 使用示例
+//! ## Usage Example
 //!
 //! ```ignore
 //! use observability::{init, metrics};
 //!
-//! // 初始化
+//! // Initialize
 //! observability::init()?;
 //!
-//! // 记录同步指标
+//! // Record sync metrics
 //! if let Some(frame) = sync_engine.push(packet) {
 //!     metrics::record_sync_metrics(&frame.sync_meta, frame.frame_id);
 //! }
@@ -34,22 +34,22 @@ pub use crate::metrics::{
     record_sync_metrics, MetricsSummary, RunningStats, StatsSummary, SyncMetricsAggregator,
 };
 
-/// 初始化可观测性（Tracing + Prometheus）
+/// Initialize observability (Tracing + Prometheus)
 ///
-/// - Tracing: JSON 格式，支持 RUST_LOG 环境变量
-/// - Prometheus: 监听 0.0.0.0:9000
+/// - Tracing: JSON format, supports RUST_LOG environment variable
+/// - Prometheus: Listens on 0.0.0.0:9000
 pub fn init() -> Result<()> {
     init_with_config(ObservabilityConfig::default())
 }
 
-/// 可观测性配置
+/// Observability configuration
 #[derive(Debug, Clone)]
 pub struct ObservabilityConfig {
-    /// 日志格式
+    /// Log format
     pub log_format: LogFormat,
-    /// Prometheus 端口 (None = 禁用)
+    /// Prometheus port (None = disabled)
     pub metrics_port: Option<u16>,
-    /// 默认日志级别
+    /// Default log level
     pub default_log_level: String,
 }
 
@@ -63,19 +63,19 @@ impl Default for ObservabilityConfig {
     }
 }
 
-/// 日志格式
+/// Log format
 #[derive(Debug, Clone, Copy, Default)]
 pub enum LogFormat {
-    /// JSON 结构化日志
+    /// JSON structured logging
     #[default]
     Json,
-    /// 人类可读格式
+    /// Human-readable format
     Pretty,
-    /// 紧凑单行格式
+    /// Compact single-line format
     Compact,
 }
 
-/// 使用自定义配置初始化
+/// Initialize with custom configuration
 pub fn init_with_config(config: ObservabilityConfig) -> Result<()> {
     // 1. Initialize Tracing
     let filter = EnvFilter::try_from_default_env()
@@ -137,9 +137,9 @@ pub fn init_with_config(config: ObservabilityConfig) -> Result<()> {
     Ok(())
 }
 
-/// 仅初始化 Prometheus 指标（不初始化 Tracing）
+/// Initialize only Prometheus metrics (without initializing Tracing)
 ///
-/// 用于 Tracing 已由其他模块初始化的场景。
+/// Used when Tracing is already initialized by another module.
 pub fn init_metrics_only(port: u16) -> Result<()> {
     let builder = PrometheusBuilder::new();
     builder

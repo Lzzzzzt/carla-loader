@@ -1,13 +1,13 @@
-//! Sync Engine 指标收集模块
+//! Sync Engine metrics collection module
 //!
-//! 基于 SyncMeta 收集和统计同步引擎的运行指标。
+//! Collects and aggregates sync engine runtime metrics based on SyncMeta.
 
 use contracts::SyncMeta;
 use metrics::{counter, gauge, histogram};
 
-/// 从 SyncMeta 记录指标
+/// Record metrics from SyncMeta
 ///
-/// 每次产生 SyncedFrame 时调用此函数来记录指标。
+/// Call this function each time a SyncedFrame is produced to record metrics.
 ///
 /// # Example
 ///
@@ -20,35 +20,35 @@ use metrics::{counter, gauge, histogram};
 /// }
 /// ```
 pub fn record_sync_metrics(meta: &SyncMeta, frame_id: u64) {
-    // 帧计数器
+    // Frame counter
     counter!("carla_syncer_frames_total").increment(1);
 
-    // 帧 ID (用于检测跳帧)
+    // Frame ID (for detecting frame skips)
     gauge!("carla_syncer_last_frame_id").set(frame_id as f64);
 
-    // 窗口大小 (秒 -> 毫秒)
+    // Window size (seconds -> milliseconds)
     histogram!("carla_syncer_window_size_ms").record(meta.window_size * 1000.0);
 
-    // 运动强度
+    // Motion intensity
     if let Some(motion) = meta.motion_intensity {
         gauge!("carla_syncer_motion_intensity").set(motion);
         histogram!("carla_syncer_motion_intensity_hist").record(motion);
     }
 
-    // 丢包计数
+    // Dropped packet count
     if meta.dropped_count > 0 {
         counter!("carla_syncer_packets_dropped_total").increment(meta.dropped_count as u64);
     }
     gauge!("carla_syncer_packets_dropped_current").set(meta.dropped_count as f64);
 
-    // 乱序包计数
+    // Out-of-order packet count
     if meta.out_of_order_count > 0 {
         counter!("carla_syncer_packets_out_of_order_total")
             .increment(meta.out_of_order_count as u64);
     }
     gauge!("carla_syncer_packets_out_of_order_current").set(meta.out_of_order_count as f64);
 
-    // 缺失传感器
+    // Missing sensors
     let missing_count = meta.missing_sensors.len();
     gauge!("carla_syncer_sensors_missing").set(missing_count as f64);
     if missing_count > 0 {
@@ -59,7 +59,7 @@ pub fn record_sync_metrics(meta: &SyncMeta, frame_id: u64) {
         }
     }
 
-    // 时间偏移统计
+    // Time offset statistics
     for (sensor_id, offset) in &meta.time_offsets {
         gauge!(
             "carla_syncer_time_offset_ms",
@@ -74,7 +74,7 @@ pub fn record_sync_metrics(meta: &SyncMeta, frame_id: u64) {
         .record(offset.abs() * 1000.0);
     }
 
-    // 卡尔曼滤波残差
+    // Kalman filter residuals
     for (sensor_id, residual) in &meta.kf_residuals {
         gauge!(
             "carla_syncer_kf_residual",
@@ -90,7 +90,7 @@ pub fn record_sync_metrics(meta: &SyncMeta, frame_id: u64) {
     }
 }
 
-/// 记录传感器数据包接收
+/// Record sensor packet reception
 pub fn record_packet_received(sensor_id: &str, sensor_type: &str) {
     counter!(
         "carla_syncer_packets_received_total",
@@ -100,7 +100,7 @@ pub fn record_packet_received(sensor_id: &str, sensor_type: &str) {
     .increment(1);
 }
 
-/// 记录同步帧分发
+/// Record synchronized frame dispatch
 pub fn record_frame_dispatched(sink_name: &str, success: bool) {
     let status = if success { "success" } else { "failure" };
     counter!(
@@ -111,12 +111,12 @@ pub fn record_frame_dispatched(sink_name: &str, success: bool) {
     .increment(1);
 }
 
-/// 记录管道延迟 (从数据产生到同步完成)
+/// Record pipeline latency (from data generation to sync completion)
 pub fn record_sync_latency_ms(latency_ms: f64) {
     histogram!("carla_syncer_sync_latency_ms").record(latency_ms);
 }
 
-/// 记录缓冲区深度
+/// Record buffer depth
 pub fn record_buffer_depth(sensor_id: &str, depth: usize) {
     gauge!(
         "carla_syncer_buffer_depth",
@@ -125,43 +125,43 @@ pub fn record_buffer_depth(sensor_id: &str, depth: usize) {
     .set(depth as f64);
 }
 
-/// 同步指标聚合器
+/// Sync metrics aggregator
 ///
-/// 在内存中聚合指标，便于统计和输出摘要。
+/// Aggregates metrics in memory for statistics and summary output.
 #[derive(Debug, Clone, Default)]
 pub struct SyncMetricsAggregator {
-    /// 总帧数
+    /// Total frames
     pub total_frames: u64,
 
-    /// 丢包总数
+    /// Total dropped packets
     pub total_dropped: u64,
 
-    /// 乱序包总数
+    /// Total out-of-order packets
     pub total_out_of_order: u64,
 
-    /// 有缺失传感器的帧数
+    /// Frames with missing sensors
     pub frames_with_missing: u64,
 
-    /// 窗口大小统计
+    /// Window size statistics
     pub window_stats: RunningStats,
 
-    /// 运动强度统计
+    /// Motion intensity statistics
     pub motion_stats: RunningStats,
 
-    /// 各传感器时间偏移统计
+    /// Time offset statistics per sensor
     pub offset_stats: std::collections::HashMap<String, RunningStats>,
 
-    /// 各传感器缺失次数
+    /// Missing count per sensor
     pub missing_counts: std::collections::HashMap<String, u64>,
 }
 
 impl SyncMetricsAggregator {
-    /// 创建新的聚合器
+    /// Create new aggregator
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// 更新聚合统计
+    /// Update aggregate statistics
     pub fn update(&mut self, meta: &SyncMeta) {
         self.total_frames += 1;
         self.total_dropped += meta.dropped_count as u64;
@@ -170,19 +170,22 @@ impl SyncMetricsAggregator {
         if !meta.missing_sensors.is_empty() {
             self.frames_with_missing += 1;
             for sensor_id in &meta.missing_sensors {
-                *self.missing_counts.entry(sensor_id.to_string()).or_insert(0) += 1;
+                *self
+                    .missing_counts
+                    .entry(sensor_id.to_string())
+                    .or_insert(0) += 1;
             }
         }
 
-        // 窗口大小 (毫秒)
+        // Window size (milliseconds)
         self.window_stats.push(meta.window_size * 1000.0);
 
-        // 运动强度
+        // Motion intensity
         if let Some(motion) = meta.motion_intensity {
             self.motion_stats.push(motion);
         }
 
-        // 时间偏移
+        // Time offsets
         for (sensor_id, offset) in &meta.time_offsets {
             self.offset_stats
                 .entry(sensor_id.to_string())
@@ -191,7 +194,7 @@ impl SyncMetricsAggregator {
         }
     }
 
-    /// 生成摘要报告
+    /// Generate summary report
     pub fn summary(&self) -> MetricsSummary {
         MetricsSummary {
             total_frames: self.total_frames,
@@ -214,13 +217,13 @@ impl SyncMetricsAggregator {
         }
     }
 
-    /// 重置统计
+    /// Reset statistics
     pub fn reset(&mut self) {
         *self = Self::default();
     }
 }
 
-/// 指标摘要
+/// Metrics summary
 #[derive(Debug, Clone, Default)]
 pub struct MetricsSummary {
     pub total_frames: u64,
@@ -263,7 +266,7 @@ impl std::fmt::Display for MetricsSummary {
     }
 }
 
-/// 统计摘要
+/// Statistics summary
 #[derive(Debug, Clone, Default)]
 pub struct StatsSummary {
     pub count: u64,
@@ -299,7 +302,7 @@ impl std::fmt::Display for StatsSummary {
     }
 }
 
-/// 在线统计计算器 (Welford's algorithm)
+/// Online statistics calculator (Welford's algorithm)
 #[derive(Debug, Clone, Default)]
 pub struct RunningStats {
     count: u64,
@@ -310,7 +313,7 @@ pub struct RunningStats {
 }
 
 impl RunningStats {
-    /// 添加新值
+    /// Add new value
     pub fn push(&mut self, value: f64) {
         self.count += 1;
 
@@ -330,12 +333,12 @@ impl RunningStats {
         }
     }
 
-    /// 样本数量
+    /// Sample count
     pub fn count(&self) -> u64 {
         self.count
     }
 
-    /// 均值
+    /// Mean
     pub fn mean(&self) -> f64 {
         if self.count == 0 {
             0.0
@@ -344,7 +347,7 @@ impl RunningStats {
         }
     }
 
-    /// 方差
+    /// Variance
     pub fn variance(&self) -> f64 {
         if self.count < 2 {
             0.0
@@ -353,17 +356,17 @@ impl RunningStats {
         }
     }
 
-    /// 标准差
+    /// Standard deviation
     pub fn std_dev(&self) -> f64 {
         self.variance().sqrt()
     }
 
-    /// 最小值
+    /// Minimum value
     pub fn min(&self) -> f64 {
         self.min
     }
 
-    /// 最大值
+    /// Maximum value
     pub fn max(&self) -> f64 {
         self.max
     }

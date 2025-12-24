@@ -1,32 +1,32 @@
-//! RuntimeGraph - Actor Factory 输出
+//! RuntimeGraph - Actor Factory output
 //!
-//! 运行时 actor 句柄与映射关系。
+//! Runtime actor handles and mappings.
 
 use std::collections::HashMap;
 
-/// CARLA actor 句柄类型
+/// CARLA actor handle type
 pub type ActorId = u32;
 
-/// 运行时 actor 图谱
+/// Runtime actor graph
 ///
-/// 包含所有已创建的 CARLA actors 及其映射关系。
+/// Contains all created CARLA actors and their mappings.
 #[derive(Debug, Clone)]
 pub struct RuntimeGraph {
-    /// 车辆 ID -> Actor 句柄
+    /// Vehicle ID -> Actor handle
     pub vehicles: HashMap<String, ActorId>,
 
-    /// 传感器 ID -> Actor 句柄
+    /// Sensor ID -> Actor handle
     pub sensors: HashMap<String, ActorId>,
 
-    /// 传感器 ID -> 所属车辆 ID
+    /// Sensor ID -> Parent vehicle ID
     pub sensor_to_vehicle: HashMap<String, String>,
 
-    /// Actor 句柄 -> 配置 ID (反查)
+    /// Actor handle -> Config ID (reverse lookup)
     pub actor_to_id: HashMap<ActorId, String>,
 }
 
 impl RuntimeGraph {
-    /// 创建空的 RuntimeGraph
+    /// Create empty RuntimeGraph
     pub fn new() -> Self {
         Self {
             vehicles: HashMap::new(),
@@ -36,20 +36,20 @@ impl RuntimeGraph {
         }
     }
 
-    /// 注册车辆
+    /// Register vehicle
     pub fn register_vehicle(&mut self, id: String, actor_id: ActorId) {
         self.actor_to_id.insert(actor_id, id.clone());
         self.vehicles.insert(id, actor_id);
     }
 
-    /// 注册传感器
+    /// Register sensor
     pub fn register_sensor(&mut self, sensor_id: String, vehicle_id: String, actor_id: ActorId) {
         self.actor_to_id.insert(actor_id, sensor_id.clone());
         self.sensor_to_vehicle.insert(sensor_id.clone(), vehicle_id);
         self.sensors.insert(sensor_id, actor_id);
     }
 
-    /// 获取所有 actor 句柄 (用于 teardown)
+    /// Get all actor handles (for teardown)
     pub fn all_actor_ids(&self) -> Vec<ActorId> {
         self.vehicles
             .values()
