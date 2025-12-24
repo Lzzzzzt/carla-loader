@@ -1,5 +1,6 @@
 //! IMU 传感器适配器
 
+#[cfg(feature = "real-carla")]
 use contracts::{ImuData, SensorPayload, Vector3};
 
 #[cfg(feature = "real-carla")]

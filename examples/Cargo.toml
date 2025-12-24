@@ -10,16 +10,20 @@ path = "complete_pipeline.rs"
 [[bin]]
 name = "real_carla_pipeline"
 path = "real_carla_pipeline.rs"
+required-features = ["real-carla"]
 
 [dependencies]
 contracts = { path = "../crates/contracts" }
-ingestion = { path = "../crates/ingestion" }
+ingestion = { path = "../crates/ingestion", default-features = false }
 sync_engine = { path = "../crates/sync_engine" }
 dispatcher = { path = "../crates/dispatcher" }
-actor_factory = { path = "../crates/actor_factory" }
+actor_factory = { path = "../crates/actor_factory", default-features = false }
 config_loader = { path = "../crates/config_loader" }
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 observability = { path = "../crates/observability" }
-carla = "0.13.0"
+
+[features]
+default = ["real-carla"]
+real-carla = ["actor_factory/real-carla", "ingestion/real-carla"]

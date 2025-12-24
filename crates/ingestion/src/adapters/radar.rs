@@ -1,10 +1,12 @@
 //! Radar 传感器适配器
 
+#[cfg(feature = "real-carla")]
 use contracts::{RadarData, SensorPayload};
 
 #[cfg(feature = "real-carla")]
 use carla::sensor::data::RadarMeasurement;
 
+#[cfg(feature = "real-carla")]
 use crate::adapters::common::pod_slice_to_bytes_unchecked;
 
 /// 将 Radar 测量转换为 SensorPayload

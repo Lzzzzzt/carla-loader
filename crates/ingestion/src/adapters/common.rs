@@ -46,6 +46,7 @@ pub fn send_packet(
 /// 1. T 是 POD 类型（plain old data）
 /// 2. slice 的生命周期足够长，或数据会被立即消费
 #[inline]
+#[allow(dead_code)] // Used by real-carla feature adapters
 pub unsafe fn pod_slice_to_bytes_unchecked<T>(slice: &[T]) -> bytes::Bytes {
     let ptr = slice.as_ptr() as *const u8;
     let len = std::mem::size_of_val(slice);

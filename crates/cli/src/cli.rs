@@ -89,6 +89,18 @@ pub struct RunArgs {
     /// Metrics server port (0 = disabled)
     #[arg(long, default_value = "9000", env = "CARLA_SYNCER_METRICS_PORT")]
     pub metrics_port: u16,
+
+    /// Replay recorded sensor data from directory (mock mode only)
+    #[arg(long, env = "CARLA_SYNCER_REPLAY")]
+    pub replay: Option<PathBuf>,
+
+    /// Replay speed multiplier (1.0 = original speed)
+    #[arg(long, default_value = "1.0")]
+    pub replay_speed: f64,
+
+    /// Loop replay when finished
+    #[arg(long)]
+    pub replay_loop: bool,
 }
 
 /// Arguments for the `validate` command

@@ -1,8 +1,11 @@
 //! Main sync engine implementation.
+#![allow(clippy::type_complexity)]
 
 use std::collections::HashMap;
 
-use contracts::{ImuData, SensorId, SensorPacket, SensorPayload, SensorType, SyncMeta, SyncedFrame};
+use contracts::{
+    ImuData, SensorId, SensorPacket, SensorPayload, SensorType, SyncMeta, SyncedFrame,
+};
 use tracing::instrument;
 
 use crate::adakf::AdaKF;

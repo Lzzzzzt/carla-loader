@@ -362,6 +362,7 @@ mod tests {
             fail_vehicles: vec![],
             fail_sensors: vec!["lidar".to_string()],
             fail_destroy: vec![],
+            ..Default::default()
         });
         client.connect("localhost", 2000).await.unwrap();
 

@@ -1,10 +1,13 @@
 //! Pipeline orchestrator - coordinates all components.
+//!
+//! Supports both real CARLA and mock modes via feature flags.
+//! When `real-carla` feature is disabled, runs in mock mode.
 
 use std::time::{Duration, Instant};
 
-use actor_factory::CarlaClient;
+use actor_factory::{ActorFactory, CarlaClient};
 use anyhow::{Context, Result};
-use contracts::{SensorConfig, SyncedFrame, WorldBlueprint};
+use contracts::{RuntimeGraph, SensorConfig, SyncedFrame, WorldBlueprint};
 use observability::record_sync_metrics;
 use tokio::sync::mpsc;
 use tracing::{info, warn};
@@ -28,6 +31,18 @@ pub struct PipelineConfig {
 
     /// Metrics server port (None = disabled)
     pub metrics_port: Option<u16>,
+
+    /// Replay recorded data path (mock mode only)
+    #[cfg_attr(feature = "real-carla", allow(dead_code))]
+    pub replay_path: Option<std::path::PathBuf>,
+
+    /// Replay speed multiplier (1.0 = original speed)
+    #[cfg_attr(feature = "real-carla", allow(dead_code))]
+    pub replay_speed: f64,
+
+    /// Loop replay when finished
+    #[cfg_attr(feature = "real-carla", allow(dead_code))]
+    pub replay_loop: bool,
 }
 
 /// Main pipeline orchestrator
@@ -43,23 +58,35 @@ impl Pipeline {
 
     /// Run the pipeline to completion
     pub async fn run(self) -> Result<PipelineStats> {
+        #[cfg(feature = "real-carla")]
+        return self.run_real().await;
+
+        #[cfg(not(feature = "real-carla"))]
+        return self.run_mock().await;
+    }
+
+    /// Run pipeline with real CARLA server
+    #[cfg(feature = "real-carla")]
+    async fn run_real(self) -> Result<PipelineStats> {
+        use actor_factory::RealCarlaClient;
+
         let start_time = Instant::now();
         let blueprint = &self.config.blueprint;
 
-        // ==== Stage 1: Initialize Metrics (optional) ====
+        // Initialize Metrics (optional)
         if let Some(port) = self.config.metrics_port {
             observability::init_metrics_only(port)?;
-            info!("Metrics endpoint available on port 9000");
+            info!("Metrics endpoint available on port {}", port);
         }
 
-        // ==== Stage 2: Connect to CARLA ====
+        // Connect to CARLA
         info!(
             host = %blueprint.world.carla_host,
             port = blueprint.world.carla_port,
             "Connecting to CARLA server..."
         );
 
-        let mut client = actor_factory::RealCarlaClient::new();
+        let mut client = RealCarlaClient::new();
         client
             .connect(&blueprint.world.carla_host, blueprint.world.carla_port)
             .await
@@ -72,9 +99,9 @@ impl Pipeline {
 
         info!("Connected to CARLA server");
 
-        // ==== Stage 3: Spawn Actors ====
+        // Spawn Actors
         info!("Spawning actors from blueprint...");
-        let factory = actor_factory::ActorFactory::new(client.clone());
+        let factory = ActorFactory::new(client.clone());
         let runtime_graph = factory
             .spawn_from_blueprint(blueprint)
             .await
@@ -86,30 +113,120 @@ impl Pipeline {
             "Actors spawned successfully"
         );
 
-        // ==== Stage 4: Setup Ingestion Pipeline ====
+        // Run common pipeline logic
+        let stats = self
+            .run_pipeline_common(&client, &factory, &runtime_graph, start_time)
+            .await?;
+
+        // Cleanup
+        self.cleanup(&factory, &runtime_graph).await;
+
+        Ok(stats)
+    }
+
+    /// Run pipeline with mock CARLA client
+    #[cfg(not(feature = "real-carla"))]
+    async fn run_mock(self) -> Result<PipelineStats> {
+        use actor_factory::{MockCarlaClient, MockConfig, ReplayConfig};
+
+        let start_time = Instant::now();
+        let blueprint = &self.config.blueprint;
+
+        // Initialize Metrics (optional)
+        if let Some(port) = self.config.metrics_port {
+            observability::init_metrics_only(port)?;
+            info!("Metrics endpoint available on port {}", port);
+        }
+
+        // Configure mock client with optional replay
+        let mock_config = MockConfig {
+            replay_config: ReplayConfig {
+                replay_path: self.config.replay_path.clone(),
+                speed_multiplier: self.config.replay_speed,
+                loop_playback: self.config.replay_loop,
+            },
+            ..Default::default()
+        };
+
+        if mock_config.replay_config.replay_path.is_some() {
+            info!(path = ?self.config.replay_path, "Running in REPLAY mode");
+        } else {
+            info!("Running in MOCK mode (no CARLA server required)");
+        }
+
+        info!(
+            host = %blueprint.world.carla_host,
+            port = blueprint.world.carla_port,
+            "Simulating connection to CARLA..."
+        );
+
+        let mut client = MockCarlaClient::with_config(mock_config);
+        client
+            .connect(&blueprint.world.carla_host, blueprint.world.carla_port)
+            .await
+            .context("Failed to initialize mock client")?;
+
+        info!("Mock CARLA client initialized");
+
+        // Spawn Actors (Mock)
+        info!("Spawning actors from blueprint (mock)...");
+        let factory = ActorFactory::new(client.clone());
+        let runtime_graph = factory
+            .spawn_from_blueprint(blueprint)
+            .await
+            .context("Failed to spawn mock actors")?;
+
+        info!(
+            vehicles = runtime_graph.vehicles.len(),
+            sensors = runtime_graph.sensors.len(),
+            "Mock actors spawned successfully"
+        );
+
+        // Run common pipeline logic
+        let stats = self
+            .run_pipeline_common(&client, &factory, &runtime_graph, start_time)
+            .await?;
+
+        // Cleanup
+        self.cleanup(&factory, &runtime_graph).await;
+
+        Ok(stats)
+    }
+
+    /// Common pipeline logic shared between mock and real modes
+    async fn run_pipeline_common<C: CarlaClient>(
+        &self,
+        client: &C,
+        _factory: &ActorFactory<C>,
+        runtime_graph: &RuntimeGraph,
+        start_time: Instant,
+    ) -> Result<PipelineStats> {
+        let blueprint = &self.config.blueprint;
+
+        // Setup Ingestion Pipeline
         info!("Setting up ingestion pipeline...");
         let mut ingestion = ingestion::IngestionPipeline::new(self.config.buffer_size);
         let mut active_sensors = 0usize;
 
         for (sensor_config_id, actor_id) in &runtime_graph.sensors {
             if let Some(sensor_config) = find_sensor(blueprint, sensor_config_id) {
-                if let Some(sensor) = client.get_sensor(*actor_id) {
-                    ingestion.register_sensor(
-                        sensor_config_id.clone(),
-                        sensor_config.sensor_type,
-                        sensor,
-                        None,
-                    );
+                // Use unified get_sensor_source interface (works for both mock and real)
+                if let Some(sensor_source) = client.get_sensor_source(
+                    *actor_id,
+                    sensor_config_id.clone(),
+                    sensor_config.sensor_type,
+                ) {
+                    ingestion.register_sensor_source(sensor_config_id.clone(), sensor_source, None);
                     active_sensors += 1;
                 } else {
-                    warn!(sensor_id = %sensor_config_id, "Failed to retrieve CARLA sensor object");
+                    warn!(sensor_id = %sensor_config_id, "Failed to get sensor source");
                 }
             }
         }
 
         info!(active_sensors, "Ingestion pipeline configured");
 
-        // ==== Stage 5: Setup Sync Engine ====
+        // Setup Sync Engine
         info!("Configuring sync engine...");
         let sync_config = blueprint.to_sync_engine_config();
         let mut sync_engine = sync_engine::SyncEngine::new(sync_config.clone());
@@ -120,7 +237,7 @@ impl Pipeline {
             "Sync engine configured"
         );
 
-        // ==== Stage 6: Setup Dispatcher ====
+        // Setup Dispatcher
         info!("Setting up dispatcher...");
         let (sync_tx, sync_rx) = mpsc::channel::<SyncedFrame>(self.config.buffer_size);
 
@@ -137,7 +254,7 @@ impl Pipeline {
 
         info!(active_sinks, "Dispatcher started");
 
-        // ==== Stage 7: Start Pipeline ====
+        // Start Pipeline
         info!("Starting sensor data ingestion...");
         ingestion.start_all();
         let ingestion_rx = ingestion
@@ -147,12 +264,13 @@ impl Pipeline {
         let max_frames = self.config.max_frames;
         let sync_tx_clone = sync_tx;
 
-        info!(
-            max_frames = ?max_frames,
-            "Pipeline running"
-        );
+        #[cfg(feature = "real-carla")]
+        info!(max_frames = ?max_frames, "Pipeline running (CARLA mode)");
 
-        // Pipeline processing task (async-channel is natively async)
+        #[cfg(not(feature = "real-carla"))]
+        info!(max_frames = ?max_frames, "Pipeline running (MOCK mode)");
+
+        // Pipeline processing task
         let pipeline_task = async move {
             let mut stats = PipelineStats {
                 active_sensors,
@@ -214,16 +332,9 @@ impl Pipeline {
             pipeline_task.await
         };
 
-        // ==== Stage 8: Cleanup ====
+        // Shutdown
         info!("Shutting down pipeline...");
-
-        // Stop ingestion
         ingestion.stop_all();
-
-        // Teardown actors
-        if let Err(e) = factory.teardown(&runtime_graph).await {
-            warn!(error = %e, "Error during actor teardown");
-        }
 
         // Wait for dispatcher to flush
         let _ = tokio::time::timeout(Duration::from_secs(5), dispatcher_handle).await;
@@ -238,6 +349,17 @@ impl Pipeline {
         );
 
         Ok(final_stats)
+    }
+
+    /// Cleanup actors
+    async fn cleanup<C: CarlaClient>(
+        &self,
+        factory: &ActorFactory<C>,
+        runtime_graph: &RuntimeGraph,
+    ) {
+        if let Err(e) = factory.teardown(runtime_graph).await {
+            warn!(error = %e, "Error during actor teardown");
+        }
     }
 }
 

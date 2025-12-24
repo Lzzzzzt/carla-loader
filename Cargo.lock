@@ -6,8 +6,11 @@ version = 4
 name = "actor_factory"
 version = "0.1.0"
 dependencies = [
+ "bytes",
  "carla",
  "contracts",
+ "serde",
+ "serde_json",
  "thiserror 2.0.17",
  "tokio",
  "tracing",
@@ -763,7 +766,6 @@ name = "complete_pipeline"
 version = "0.1.0"
 dependencies = [
  "actor_factory",
- "carla",
  "config_loader",
  "contracts",
  "dispatcher",

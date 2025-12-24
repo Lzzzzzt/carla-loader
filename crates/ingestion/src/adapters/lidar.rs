@@ -1,13 +1,16 @@
 //! LiDAR 传感器适配器
 
+#[cfg(feature = "real-carla")]
 use contracts::{PointCloudData, SensorPayload};
 
 #[cfg(feature = "real-carla")]
 use carla::sensor::data::LidarMeasurement;
 
+#[cfg(feature = "real-carla")]
 use crate::adapters::common::pod_slice_to_bytes_unchecked;
 
 /// LidarDetection 每点 16 字节 (x: f32, y: f32, z: f32, intensity: f32)
+#[cfg(feature = "real-carla")]
 const POINT_STRIDE: u32 = 16;
 
 /// 将 LiDAR 测量转换为 SensorPayload

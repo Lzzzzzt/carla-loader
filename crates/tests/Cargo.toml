@@ -6,9 +6,13 @@ edition.workspace = true
 [dependencies]
 contracts = { path = "../contracts" }
 config_loader = { path = "../config_loader" }
-actor_factory = { path = "../actor_factory" }
-ingestion = { path = "../ingestion" }
+actor_factory = { path = "../actor_factory", default-features = false }
+ingestion = { path = "../ingestion", default-features = false }
 sync_engine = { path = "../sync_engine" }
 dispatcher = { path = "../dispatcher" }
 observability = { path = "../observability" }
 tokio = { workspace = true }
+
+[features]
+default = ["real-carla"]
+real-carla = ["actor_factory/real-carla", "ingestion/real-carla"]

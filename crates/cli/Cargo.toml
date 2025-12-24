@@ -14,8 +14,8 @@ path = "src/main.rs"
 # Workspace crates
 contracts = { path = "../contracts" }
 config_loader = { path = "../config_loader" }
-actor_factory = { path = "../actor_factory", features = ["real-carla"] }
-ingestion = { path = "../ingestion" }
+actor_factory = { path = "../actor_factory", default-features = false }
+ingestion = { path = "../ingestion", default-features = false }
 sync_engine = { path = "../sync_engine" }
 dispatcher = { path = "../dispatcher" }
 observability = { path = "../observability" }
@@ -43,5 +43,8 @@ serde_json.workspace = true
 tempfile = "3.19"
 
 [features]
-default = []
-mock = []    # Use mock CARLA client for testing
+# Default: enable real CARLA support
+default = ["real-carla"]
+
+# Enable real CARLA client (requires CARLA server)
+real-carla = ["actor_factory/real-carla", "ingestion/real-carla"]

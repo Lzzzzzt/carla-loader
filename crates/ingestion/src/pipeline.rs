@@ -3,20 +3,25 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use contracts::{SensorPacket, SensorType};
 use async_channel::{bounded, Receiver, Sender};
+use contracts::{SensorPacket, SensorSource};
 use tracing::{debug, info, instrument};
 
 #[cfg(feature = "real-carla")]
 use carla::client::Sensor;
+#[cfg(feature = "real-carla")]
+use contracts::SensorType;
 
 use crate::adapter::SensorAdapter;
+#[cfg(feature = "real-carla")]
 use crate::adapters::{CameraAdapter, GnssAdapter, ImuAdapter, LidarAdapter, RadarAdapter};
 use crate::config::{BackpressureConfig, IngestionMetrics};
+use crate::generic_adapter::GenericSensorAdapter;
 
 /// Ingestion Pipeline
 ///
 /// 管理多个传感器适配器，提供统一的数据流输出。
+/// 支持 Mock 和 Real 传感器的统一注册。
 pub struct IngestionPipeline {
     /// 已注册的适配器
     adapters: HashMap<String, Box<dyn SensorAdapter>>,
@@ -67,7 +72,37 @@ impl IngestionPipeline {
         }
     }
 
+    /// 注册传感器数据源（统一接口）
+    ///
+    /// 这是推荐的注册方法，支持 Mock 和 Real 传感器。
+    ///
+    /// # Arguments
+    /// * `sensor_id` - 传感器配置 ID
+    /// * `source` - 实现 `SensorSource` trait 的数据源
+    /// * `config` - 可选的背压配置
+    #[instrument(
+        name = "ingestion_register_sensor_source",
+        skip(self, source, config),
+        fields(sensor_id = %sensor_id)
+    )]
+    pub fn register_sensor_source(
+        &mut self,
+        sensor_id: String,
+        source: Box<dyn SensorSource>,
+        config: Option<BackpressureConfig>,
+    ) {
+        let adapter = GenericSensorAdapter::new(
+            sensor_id.clone(),
+            source,
+            config.unwrap_or_else(|| self.default_config.clone()),
+        );
+        debug!(sensor_id = %sensor_id, "registered sensor source");
+        self.adapters.insert(sensor_id, Box::new(adapter));
+    }
+
     /// 注册传感器（使用 carla-rust Sensor）
+    ///
+    /// 保留用于向后兼容，建议使用 `register_sensor_source`。
     #[cfg(feature = "real-carla")]
     #[instrument(
         name = "ingestion_register_sensor",

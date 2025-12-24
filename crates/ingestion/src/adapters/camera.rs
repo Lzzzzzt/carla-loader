@@ -1,6 +1,8 @@
 //! Camera 传感器适配器
 
+#[cfg(feature = "real-carla")]
 use bytes::Bytes;
+#[cfg(feature = "real-carla")]
 use contracts::{ImageData, ImageFormat, SensorPayload};
 
 #[cfg(feature = "real-carla")]

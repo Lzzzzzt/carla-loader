@@ -1,5 +1,6 @@
 //! GNSS 传感器适配器
 
+#[cfg(feature = "real-carla")]
 use contracts::{GnssData, SensorPayload};
 
 #[cfg(feature = "real-carla")]
@@ -16,4 +17,9 @@ fn gnss_to_payload(gnss: &GnssMeasurement) -> SensorPayload {
     })
 }
 
-define_sensor_adapter!(GnssAdapter, SensorType::Gnss, GnssMeasurement, gnss_to_payload);
+define_sensor_adapter!(
+    GnssAdapter,
+    SensorType::Gnss,
+    GnssMeasurement,
+    gnss_to_payload
+);

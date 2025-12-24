@@ -53,18 +53,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut ingestion = IngestionPipeline::new(100);
 
     for (sensor_config_id, actor_id) in &runtime_graph.sensors {
-        // Find which vehicle owns this sensor to check sensor type
-        // Simpler: iterate blueprint config
+        // Use unified get_sensor_source interface
         if let Some(sensor_config) = find_sensor(&blueprint, sensor_config_id) {
-            if let Some(sensor) = client.get_sensor(*actor_id) {
-                ingestion.register_sensor(
-                    String::from(sensor_config_id),
-                    sensor_config.sensor_type,
-                    sensor,
-                    None,
-                );
+            // New unified interface - works the same for Mock and Real!
+            if let Some(sensor_source) = client.get_sensor_source(
+                *actor_id,
+                sensor_config_id.clone(),
+                sensor_config.sensor_type,
+            ) {
+                ingestion.register_sensor_source(sensor_config_id.clone(), sensor_source, None);
             } else {
-                warn!(sensor_id = %sensor_config_id, "Failed to retrieve CARLA sensor object");
+                warn!(sensor_id = %sensor_config_id, "Failed to retrieve sensor source");
             }
         }
     }

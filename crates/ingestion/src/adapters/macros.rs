@@ -31,7 +31,10 @@ macro_rules! define_sensor_adapter {
 
         use contracts::{SensorPacket, SensorType};
         use async_channel::Sender;
+        #[cfg(feature = "real-carla")]
         use tracing::{debug, trace, warn};
+        #[cfg(not(feature = "real-carla"))]
+        use tracing::{debug, warn};
 
         #[cfg(feature = "real-carla")]
         use carla::client::Sensor;
@@ -39,9 +42,11 @@ macro_rules! define_sensor_adapter {
         use carla::sensor::SensorDataBase;
 
         use crate::adapter::SensorAdapter;
+        #[cfg(feature = "real-carla")]
         use crate::adapters::common::send_packet;
         use crate::config::{BackpressureConfig, IngestionMetrics};
 
+        #[allow(dead_code)] // config field used only with real-carla
         pub struct $adapter_name {
             sensor_id: String,
             config: BackpressureConfig,

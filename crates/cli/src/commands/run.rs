@@ -65,6 +65,9 @@ pub async fn run_pipeline(args: &RunArgs) -> Result<()> {
         } else {
             Some(args.metrics_port)
         },
+        replay_path: args.replay.clone(),
+        replay_speed: args.replay_speed,
+        replay_loop: args.replay_loop,
     };
 
     // Create and run pipeline

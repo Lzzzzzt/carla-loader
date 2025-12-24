@@ -7,9 +7,10 @@ use std::sync::{Arc, Mutex};
 
 use carla::client::{ActorBase, Client, Sensor, Vehicle, World};
 use carla::geom::{Location, Rotation, Transform as CarlaTransform};
-use contracts::{ActorId, Transform};
+use contracts::{ActorId, SensorSource, SensorType, Transform};
 use tracing::{debug, info, instrument, warn};
 
+use crate::carla_sensor_source::CarlaSensorSource;
 use crate::client::CarlaClient;
 use crate::error::{ActorFactoryError, Result};
 
@@ -303,6 +304,20 @@ impl CarlaClient for RealCarlaClient {
     #[instrument(name = "real_carla_actor_exists", skip(self), fields(actor_id))]
     async fn actor_exists(&self, actor_id: ActorId) -> Result<bool> {
         Ok(self.actors.lock().unwrap().contains_key(&actor_id))
+    }
+
+    fn get_sensor_source(
+        &self,
+        actor_id: ActorId,
+        sensor_id: String,
+        sensor_type: SensorType,
+    ) -> Option<Box<dyn SensorSource>> {
+        let sensor = self.get_sensor(actor_id)?;
+        Some(Box::new(CarlaSensorSource::new(
+            sensor_id,
+            sensor_type,
+            sensor,
+        )))
     }
 }
 
