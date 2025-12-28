@@ -185,7 +185,7 @@ mod tests {
 
         // Should have received some packets
         let count = Arc::new(AtomicU64::new(0));
-        while let Ok(_) = rx.try_recv() {
+        while rx.try_recv().is_ok() {
             count.fetch_add(1, Ordering::Relaxed);
         }
         assert!(count.load(Ordering::Relaxed) > 0);
